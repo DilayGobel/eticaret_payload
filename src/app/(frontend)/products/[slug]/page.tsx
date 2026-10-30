@@ -5,14 +5,21 @@ import { AddToCart } from './AddToCart'
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
+  const decodedSlug = decodeURIComponent(slug) // URL'deki %C3%B6 gibi karakterleri düzeltir
+
   const payload = await getPayload({ config })
 
   const res = await payload.find({
     collection: 'products',
-    where: { slug: { equals: slug } },
+    where: {
+      or: [
+        { slug: { equals: decodedSlug } },
+        { slug: { equals: slug } },
+      ],
+    },
     limit: 1,
     depth: 2,
-    overrideAccess: false,
+    overrideAccess: true,
   })
   const product = res.docs[0]
   if (!product) notFound()
@@ -22,7 +29,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     where: { product: { equals: product.id } },
     pagination: false,
     depth: 0,
-    overrideAccess: false,
+    overrideAccess: true, // true yapıldı
   })
 
   const images = (product.images || []).filter((i): i is any => typeof i === 'object')

@@ -27,14 +27,19 @@ export const Addresses: CollectionConfig = {
   hooks: {
     beforeValidate: [
       ({ operation, data, req }) => {
-        if (data && operation === 'create' && req.user?.role !== 'admin') {
-          data.user = req.user?.id // başkasının adına adres ekleyemesin
+        if (data && operation === 'create') {
+          // Eğer admin değilse KESİNLİKLE kendi ID'sini ata
+          if (req.user?.role !== 'admin') {
+            data.user = req.user?.id
+          } else if (!data.user && req.user) {
+            // Admin bile olsa, eğer formdan özel bir user gönderilmediyse admin'in kendi ID'sini ata
+            data.user = req.user.id
+          }
         }
         return data
       },
     ],
   },
-  
   fields: [
     { name: 'user', type: 'relationship', relationTo: 'users', required: true, index: true },
     { name: 'title', type: 'text', required: true, admin: { description: 'Örn: "Ev", "İş"' } },
