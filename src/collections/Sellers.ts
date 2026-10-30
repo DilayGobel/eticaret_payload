@@ -25,27 +25,33 @@ export const Sellers: CollectionConfig = {
     delete: isAdmin,
   },
   hooks: {
-    // beforeValidate: owner required; ayrıca alan-seviyesi `update` erişimi create'te
-    // devreye girmediği için başvuruda komisyon/status'u burada zorla sıfırlıyoruz.
     beforeValidate: [
       ({ operation, data, req }) => {
-        if (operation === 'create' && req.user?.role !== 'admin') {
-          data = { ...data, owner: req.user?.id, status: 'pending', commissionRate: 10 }
+        if (operation === 'create') {
+          // Eğer admin bile olsa owner seçilmediyse mevcut kullanıcıyı ata
+          const owner = data?.owner || req.user?.id
+          if (req.user?.role !== 'admin') {
+            data = { ...data, owner, status: 'pending', commissionRate: 10 }
+          } else {
+            data = { ...data, owner }
+          }
         }
         return data
       },
     ],
-    // Admin onaylayınca sahibi otomatik "seller" rolüne yükselir (portal girişi için şart).
     afterChange: [
       async ({ doc, previousDoc, req }) => {
         if (doc.status === 'approved' && previousDoc?.status !== 'approved') {
           const ownerId = typeof doc.owner === 'object' ? doc.owner.id : doc.owner
-          await req.payload.update({
-            collection: 'users',
-            id: ownerId,
-            data: { role: 'seller' },
-            overrideAccess: true,
-          })
+          if (ownerId) {
+            await req.payload.update({
+              collection: 'users',
+              id: ownerId,
+              data: { role: 'seller' },
+              overrideAccess: true,
+              req, // Deadlock ve timeout'u önleyen kritik parametre
+            })
+          }
         }
         return doc
       },
