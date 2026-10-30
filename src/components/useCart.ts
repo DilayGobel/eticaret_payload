@@ -13,7 +13,8 @@ export function useCart() {
       if (!cart) return setItems([])
       const res = await api(`/cart-items?where[cart][equals]=${cart.id}&depth=3&limit=100&sort=createdAt`)
       // Yayından kalkmış üründe variant/product obje olarak gelmez, onları ayıkla
-      setItems(res.docs.filter((i: any) => typeof i.variant === 'object' && typeof i.variant?.product === 'object'))
+      //setItems(res.docs.filter((i: any) => typeof i.variant === 'object' && typeof i.variant?.product === 'object'))
+      setItems(res.docs || [])
     } finally {
       setLoading(false)
     }
