@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { formatTRY } from '@/lib/money'
+import { HomeAddToCart } from '@/components/HomeAddToCart'
 
 const PAGE_SIZE = 12
 
@@ -33,11 +34,11 @@ export default async function HomePage({
     limit: PAGE_SIZE,
     sort: '-createdAt',
     depth: 1,
-    overrideAccess: false, // anonim ziyaretçi gibi sorgula: erişim kuralları geçerli
+    overrideAccess: false,
   })
 
-  // Kart üzerindeki "başlayan fiyat" için ürünlerin en ucuz varyantı
-  const prices = new Map<string, number>()
+  // Varyantları ve en ucuz fiyat / stok bilgisini eşleştir
+  const variantData = new Map<string, { price: number; variantId: string; stock: number }>()
   if (products.docs.length) {
     const variants = await payload.find({
       collection: 'product-variants',
@@ -46,9 +47,17 @@ export default async function HomePage({
       depth: 0,
       overrideAccess: false,
     })
+
     for (const v of variants.docs) {
       const pid = String(v.product)
-      prices.set(pid, Math.min(prices.get(pid) ?? Infinity, v.price))
+      const current = variantData.get(pid)
+      if (!current || v.price < current.price) {
+        variantData.set(pid, {
+          price: v.price,
+          variantId: String(v.id),
+          stock: v.stock,
+        })
+      }
     }
   }
 
@@ -78,13 +87,21 @@ export default async function HomePage({
         <div className="grid">
           {products.docs.map((p) => {
             const img = Array.isArray(p.images) && typeof p.images[0] === 'object' ? p.images[0] : null
-            const price = prices.get(String(p.id))
+            const item = variantData.get(String(p.id))
+
             return (
               <Link key={p.id} href={`/products/${p.slug}`} className="card">
                 {img?.url ? <img src={img.url} alt={img.alt} /> : <div className="ph" />}
                 <div className="pad">
-                  <div>{p.name}</div>
-                  <div className="price">{price !== undefined ? formatTRY(price) : 'Stokta yok'}</div>
+                  <div style={{ fontWeight: 500, marginBottom: 4 }}>{p.name}</div>
+                  <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                    <div className="price" style={{ margin: 0 }}>
+                      {item ? formatTRY(item.price) : 'Stokta yok'}
+                    </div>
+                    {item && item.stock > 0 && (
+                      <HomeAddToCart variantId={item.variantId} stock={item.stock} />
+                    )}
+                  </div>
                 </div>
               </Link>
             )
