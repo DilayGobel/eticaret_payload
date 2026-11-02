@@ -44,24 +44,11 @@ async function ensureCart() {
   return (await getCart()) ?? (await api('/carts', { method: 'POST', body: '{}' })).doc
 }
 
-export async function addToCart(variantId: string, quantity = 1) {
-  const cart = await ensureCart()
-  const found = await api(
-    `/cart-items?where[cart][equals]=${cart.id}&where[variant][equals]=${variantId}&limit=1&depth=0`,
-  )
-  const existing = found.docs[0]
-  if (existing) {
-    await api(`/cart-items/${existing.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ quantity: existing.quantity + quantity }),
-    })
-  } else {
-    await api('/cart-items', {
-      method: 'POST',
-      body: JSON.stringify({ cart: cart.id, variant: variantId, quantity }),
-    })
-  }
-  notifyCartChanged()
+export async function addToCart(variantId: string, delta: number) {
+  return api('/carts/add-item', {
+    method: 'POST',
+    body: JSON.stringify({ variantId, delta }),
+  })
 }
 
 export async function updateCartItem(id: string, quantity: number) {
