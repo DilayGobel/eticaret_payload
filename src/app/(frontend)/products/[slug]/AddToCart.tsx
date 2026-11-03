@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { addToCart } from '@/lib/api'
 import { formatTRY } from '@/lib/money'
 import { useCart } from '@/components/useCart'
 
@@ -10,49 +9,24 @@ type V = { id: string; sku: string; price: number; stock: number; options?: Reco
 export function AddToCart({ variants }: { variants: V[] }) {
   const firstInStock = variants.find((v) => v.stock > 0) ?? variants[0]
   const [sel, setSel] = useState<V | undefined>(firstInStock)
-  const { items, loading, reload } = useCart()
+  const { qty, loading, change } = useCart()
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   if (!sel) return <p className="muted">Bu ürün için seçenek bulunamadı.</p>
 
-  // Sepetteki ilgili varyantı bul
-  const currentVariantId = String(sel.id)
-  const inCartItem = items.find((item: any) => {
-    const raw = item.variant
-    const vId = typeof raw === 'object' && raw !== null ? (raw.id || raw._id) : raw
-    return String(vId) === currentVariantId
-  })
-  console.log('--- SEPET EŞLEŞTİRME TESTİ ---')
-  console.log('Seçili Varyant ID (sel.id):', sel.id)
-  console.log('useCart items dizisi:', items)
-  const inCartQty = inCartItem?.quantity || 0
+  const inCartQty = qty[String(sel.id)] || 0
 
   const label = (v: V) => (v.options && Object.values(v.options).join(' / ')) || v.sku
 
-  const handleIncrease = async () => {
-    if (busy || loading || inCartQty >= sel.stock) return
+  const act = async (delta: number) => {
+    if (busy) return
+    if (delta > 0 && inCartQty >= sel.stock) return
+    if (delta < 0 && inCartQty <= 0) return
     setBusy(true)
     setMsg(null)
     try {
-      await addToCart(sel.id, 1)
-      window.dispatchEvent(new Event('cart-changed'))
-      await reload()
-    } catch (e: any) {
-      setMsg({ ok: false, text: e.message || 'Hata oluştu' })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const handleDecrease = async () => {
-    if (busy || loading || inCartQty <= 0) return
-    setBusy(true)
-    setMsg(null)
-    try {
-      await addToCart(sel.id, -1)
-      window.dispatchEvent(new Event('cart-changed'))
-      await reload()
+      await change(String(sel.id), delta)
     } catch (e: any) {
       setMsg({ ok: false, text: e.message || 'Hata oluştu' })
     } finally {
@@ -88,22 +62,21 @@ export function AddToCart({ variants }: { variants: V[] }) {
         {sel.stock > 0 ? (sel.stock <= 5 ? `Son ${sel.stock} adet!` : 'Stokta var') : 'Tükendi'}
       </div>
 
-      {/* Sepet ilk yüklenirken yanlış buton gösterme */}
       {loading && inCartQty === 0 ? (
         <span className="muted" style={{ fontSize: 14 }}>Yükleniyor...</span>
       ) : inCartQty === 0 ? (
         <button
           type="button"
           className="btn"
-          onClick={handleIncrease}
-          disabled={busy || loading || sel.stock <= 0}
+          onClick={() => act(1)}
+          disabled={busy || sel.stock <= 0}
           style={{
             maxWidth: 200,
             padding: '10px 20px',
             cursor: sel.stock <= 0 ? 'not-allowed' : 'pointer',
           }}
         >
-          {busy ? 'Ekleniyor...' : 'Sepete Ekle'}
+          Sepete Ekle
         </button>
       ) : (
         <div className="row" style={{ alignItems: 'center', gap: 12 }}>
@@ -120,8 +93,7 @@ export function AddToCart({ variants }: { variants: V[] }) {
           >
             <button
               type="button"
-              onClick={handleDecrease}
-              disabled={busy || loading}
+              onClick={() => act(-1)}
               style={{
                 width: 28,
                 height: 28,
@@ -145,8 +117,8 @@ export function AddToCart({ variants }: { variants: V[] }) {
 
             <button
               type="button"
-              onClick={handleIncrease}
-              disabled={busy || loading || inCartQty >= sel.stock}
+              onClick={() => act(1)}
+              disabled={inCartQty >= sel.stock}
               style={{
                 width: 28,
                 height: 28,
