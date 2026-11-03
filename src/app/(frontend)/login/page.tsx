@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { useAuth } from '@/components/Providers'
+import { mergeGuestCart } from '@/lib/api'
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -14,20 +15,41 @@ export default function LoginPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setBusy(true); setError('')
-    try { await login(email, password); router.push('/') }
-    catch (err: any) { setError(err.message) }
-    finally { setBusy(false) }
+    setBusy(true)
+    setError('')
+    try {
+      await login(email, password)
+      await mergeGuestCart() // misafir sepetini hesaba birleştir
+      router.push('/')
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
     <form className="form stack panel" onSubmit={submit}>
       <h1>Giriş Yap</h1>
-      <input type="email" placeholder="E-posta" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      <input type="password" placeholder="Şifre" value={password} onChange={(e) => setPassword(e.target.value)} required />
+      <input
+        type="email"
+        placeholder="E-posta"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        required
+      />
+      <input
+        type="password"
+        placeholder="Şifre"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        required
+      />
       {error && <div className="error">{error}</div>}
       <button disabled={busy}>Giriş</button>
-      <span className="muted">Hesabın yok mu? <Link href="/register">Kayıt ol</Link></span>
+      <span className="muted">
+        Hesabın yok mu? <Link href="/register">Kayıt ol</Link>
+      </span>
     </form>
   )
 }

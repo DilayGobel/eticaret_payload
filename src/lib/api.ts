@@ -87,3 +87,17 @@ export async function uploadMedia(file: File, alt?: string) {
   // Payload POST cevabında dönen döküman doc veya doğrudan id şeklinde olabilir
   return data.doc || data
 }
+
+export async function mergeGuestCart() {
+  if (!hasGuestToken()) return
+  try {
+    await api('/carts/merge-guest', {
+      method: 'POST',
+      body: JSON.stringify({ guestToken: getGuestToken() }),
+    })
+  } catch {
+    // birleştirme başarısızsa girişi bozma
+  }
+  clearGuestToken()
+  notifyCartChanged() // CartProvider ve sepet sayfası yenilensin
+}
