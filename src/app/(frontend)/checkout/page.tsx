@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/Providers'
-import { useCart } from '@/components/useCart'
+import { useCart, useCartDetails } from '@/components/useCart'
 import { api, notifyCartChanged } from '@/lib/api'
 import { formatTRY } from '@/lib/money'
 import { calcShipping } from '@/utils/coupon'
@@ -12,7 +12,8 @@ const emptyAddr = { title: '', fullName: '', phone: '', city: '', district: '', 
 
 export default function CheckoutPage() {
   const { user, loading: authLoading } = useAuth()
-  const { items, loading, subtotal } = useCart()
+  const { items, loading, subtotal } = useCartDetails()
+  const { refresh } = useCart()
   const router = useRouter()
 
   const [addresses, setAddresses] = useState<any[]>([])
