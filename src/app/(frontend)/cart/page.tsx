@@ -1,12 +1,13 @@
 'use client'
 import Link from 'next/link'
-import { useCart } from '@/components/useCart'
+import { useCart, useCartDetails } from '@/components/useCart'
 import { removeCartItem, updateCartItem } from '@/lib/api'
 import { formatTRY } from '@/lib/money'
 import { calcShipping, FREE_SHIPPING_THRESHOLD } from '@/utils/coupon'
 
 export default function CartPage() {
-  const { items, loading, subtotal } = useCart()
+  const { items, loading, subtotal } = useCartDetails()
+  const { refresh } = useCart()
   if (loading) return <p className="muted">Yükleniyor…</p>
   if (items.length === 0) return (
     <div className="panel stack"><h1>Sepetiniz boş</h1><Link className="btn" href="/">Alışverişe başla</Link></div>
