@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { mergeGuestCart } from '@/lib/api'
 
 export default function LogoutButton() {
   const router = useRouter()

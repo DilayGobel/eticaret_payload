@@ -47,7 +47,7 @@ export const Carts: CollectionConfig = {
     ],
   },
   endpoints: [
-    // ───────────── merge-guest (mevcut) ─────────────
+    // ───────────── merge-guest ─────────────
     {
       path: '/merge-guest',
       method: 'post',
@@ -60,7 +60,6 @@ export const Carts: CollectionConfig = {
           | Record<string, unknown>
           | undefined
         const guestToken = body?.guestToken as string | undefined
-
         if (!guestToken) {
           return Response.json({ error: 'guestToken zorunlu.' }, { status: 400 })
         }
@@ -72,7 +71,6 @@ export const Carts: CollectionConfig = {
           overrideAccess: true,
         })
         const guestCart = guestCarts.docs[0]
-
         if (!guestCart) {
           return Response.json({ merged: false, reason: 'Misafir sepeti bulunamadı.' })
         }
@@ -90,6 +88,7 @@ export const Carts: CollectionConfig = {
             collection: 'carts',
             data: { user: req.user.id },
             overrideAccess: true,
+            req, // <-- KRİTİK: hook req.user'ı görsün
           })
         }
 
@@ -97,32 +96,41 @@ export const Carts: CollectionConfig = {
           collection: 'cart-items',
           where: { cart: { equals: guestCart.id } },
           pagination: false,
+          depth: 1, // stok için variant objesi lazım
           overrideAccess: true,
         })
 
         for (const item of guestItems.docs) {
-          const variantId = typeof item.variant === 'object' ? item.variant.id : item.variant
+          const variant = item.variant as any
+          const variantId = typeof variant === 'object' ? variant.id : variant
+          const stock = typeof variant === 'object' ? Number(variant.stock) : Infinity
 
           const existing = await req.payload.find({
             collection: 'cart-items',
-            where: {
-              and: [{ cart: { equals: userCart.id } }, { variant: { equals: variantId } }],
-            },
+            where: { and: [{ cart: { equals: userCart.id } }, { variant: { equals: variantId } }] },
             limit: 1,
             overrideAccess: true,
           })
 
           if (existing.docs[0]) {
+            const total = Math.min(
+              (existing.docs[0].quantity as number) + (item.quantity as number),
+              stock,
+            )
             await req.payload.update({
               collection: 'cart-items',
               id: existing.docs[0].id,
-              data: { quantity: (existing.docs[0].quantity as number) + (item.quantity as number) },
+              data: { quantity: total },
               overrideAccess: true,
             })
           } else {
             await req.payload.create({
               collection: 'cart-items',
-              data: { cart: userCart.id, variant: variantId, quantity: item.quantity },
+              data: {
+                cart: userCart.id,
+                variant: variantId,
+                quantity: Math.min(item.quantity as number, stock),
+              },
               overrideAccess: true,
             })
           }

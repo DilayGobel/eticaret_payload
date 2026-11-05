@@ -95,9 +95,14 @@ export async function mergeGuestCart() {
       method: 'POST',
       body: JSON.stringify({ guestToken: getGuestToken() }),
     })
-  } catch {
-    // birleştirme başarısızsa girişi bozma
+    clearGuestToken() // sadece başarılıysa sil
+  } catch (err) {
+    console.error('Sepet birleştirilemedi:', err)
   }
-  clearGuestToken()
-  notifyCartChanged() // CartProvider ve sepet sayfası yenilensin
+  notifyCartChanged()
+}
+
+export async function getCartItems() {
+  const data = await api('/cart-items?depth=2&limit=100')
+  return data.docs as any[]
 }

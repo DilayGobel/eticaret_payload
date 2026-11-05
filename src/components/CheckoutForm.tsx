@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { getCartItems } from '@/lib/cart-client'
+import { getCartItems } from '@/lib/api'
 import { formatPrice } from '@/lib/format'
 import { calcShipping } from '@/lib/shipping'
 

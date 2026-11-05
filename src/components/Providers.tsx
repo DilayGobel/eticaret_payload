@@ -1,6 +1,6 @@
 'use client'
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { api, clearGuestToken, hasGuestToken, getGuestToken, notifyCartChanged } from '@/lib/api'
+import { api, notifyCartChanged, mergeGuestCart } from '@/lib/api'
 
 type AuthCtx = {
   user: any | null
@@ -33,13 +33,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     await api('/users/login', { method: 'POST', body: JSON.stringify({ email, password }) })
-    // Misafirken doldurulan sepeti hesaba aktar
-    if (hasGuestToken()) {
-      try {
-        await api('/carts/merge-guest', { method: 'POST', body: JSON.stringify({ guestToken: getGuestToken() }) })
-      } catch {}
-      clearGuestToken()
+    
+    // Misafir sepetini kullanıcı hesabına aktar
+    try {
+      await mergeGuestCart()
+    } catch (e) {
+      console.error('Sepet birleştirme hatası:', e)
     }
+
     await refresh()
     notifyCartChanged()
   }

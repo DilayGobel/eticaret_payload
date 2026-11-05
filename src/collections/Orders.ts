@@ -65,19 +65,23 @@ export const Orders: CollectionConfig = {
           return Response.json({ error: 'Teslimat adresi zorunlu.' }, { status: 400 })
         }
 
-        // Sepeti oku (variant -> product -> seller iç içe)
+        // Kullanıcının varsa tüm sepetlerini çek
         const cartsRes = await req.payload.find({
           collection: 'carts',
           where: { user: { equals: req.user.id } },
-          limit: 1,
+          pagination: false,
           overrideAccess: true,
         })
-        const cart = cartsRes.docs[0]
-        if (!cart) return Response.json({ error: 'Sepetiniz boş.' }, { status: 400 })
+        if (!cartsRes.docs || cartsRes.docs.length === 0) {
+          return Response.json({ error: 'Sepetiniz boş.' }, { status: 400 })
+        }
 
+        const userCartIds = cartsRes.docs.map((c) => c.id)
+
+        // Bu sepetlere bağlı tüm satırları getir
         const itemsRes = await req.payload.find({
           collection: 'cart-items',
-          where: { cart: { equals: cart.id } },
+          where: { cart: { in: userCartIds } },
           depth: 3,
           pagination: false,
           overrideAccess: true,
@@ -220,9 +224,11 @@ export const Orders: CollectionConfig = {
               updatedAt: now(),
             })
 
-            // Sepeti de aynı transaction'da boşalt: ya hep ya hiç
-            await tx.delete(t.cart_items).where(eq(t.cart_items.cart, cart.id))
-            await tx.delete(t.carts).where(eq(t.carts.id, cart.id))
+            // Sepeti de aynı transaction'da boşalt: Kullanıcının tüm sepetlerini ve satırlarını temizle
+            for (const cartId of userCartIds) {
+              await tx.delete(t.cart_items).where(eq(t.cart_items.cart, cartId))
+              await tx.delete(t.carts).where(eq(t.carts.id, cartId))
+            }
 
             return { orderId: order.id, orderNumber, subtotal, discountAmount, shippingFee, finalAmount }
           })
