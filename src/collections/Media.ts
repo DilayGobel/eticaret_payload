@@ -1,5 +1,7 @@
 ﻿import type { CollectionConfig } from 'payload'
 
+const SEP = '|||'
+
 export const Media: CollectionConfig = {
   slug: 'media',
   access: {
@@ -9,24 +11,28 @@ export const Media: CollectionConfig = {
     delete: () => true,
   },
   upload: {
-    disableLocalStorage: true, // Vercel salt-okunur disk hatasını (500) engeller
+    disableLocalStorage: true,
   },
   hooks: {
     beforeChange: [
       ({ data, req }) => {
         if (req.file && req.file.data) {
-          const mime = req.file.mimetype || 'image/jpeg'
-          const b64 = req.file.data.toString('base64')
-          data.url = `data:${mime};base64,${b64}`
+          const mime = req.file.mimetype || 'image/png'
+          const b64 = `data:${mime};base64,${req.file.data.toString('base64')}`
+          const cleanAlt = (data.alt || '').split(SEP)[0]
+          // Migration gerektirmemek için Base64 verisini mevcut metin sütununda sakla
+          data.alt = `${cleanAlt}${SEP}${b64}`
+          data.url = b64
         }
         return data
       },
     ],
     afterRead: [
       ({ doc }) => {
-        // Payload'un yerel dosya URL'si üretip Base64 URL'yi ezmesini engelle
-        if (doc?.url && doc.url.startsWith('data:')) {
-          return doc
+        if (doc && typeof doc.alt === 'string' && doc.alt.includes(SEP)) {
+          const [cleanAlt, b64] = doc.alt.split(SEP)
+          doc.alt = cleanAlt
+          doc.url = b64
         }
         return doc
       },
@@ -37,6 +43,20 @@ export const Media: CollectionConfig = {
       name: 'alt',
       type: 'text',
       required: true,
+    },
+    {
+      name: 'url',
+      type: 'text',
+      hooks: {
+        afterRead: [
+          ({ value, siblingData }) => {
+            if (typeof siblingData?.alt === 'string' && siblingData.alt.includes(SEP)) {
+              return siblingData.alt.split(SEP)[1]
+            }
+            return value
+          },
+        ],
+      },
     },
   ],
 }
