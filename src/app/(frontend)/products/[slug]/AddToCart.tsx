@@ -1,6 +1,6 @@
-'use client'
+﻿'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { formatTRY } from '@/lib/money'
 import { useCart } from '@/components/useCart'
 
@@ -9,7 +9,7 @@ type V = {
   sku: string
   price: number
   stock: number
-  options?: Record<string, string> | null
+  options?: Record<string, any> | null
 }
 
 const KEY_LABELS: Record<string, string> = {
@@ -20,20 +20,36 @@ const KEY_LABELS: Record<string, string> = {
   boyut: 'Boyut',
 }
 
+// "Siyah, Beyaz, Pembe" metnini ['Siyah', 'Beyaz', 'Pembe'] olarak ayrı seçeneklere böler
+function parseValues(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.flatMap((x) => String(x).split(',')).map((x) => x.trim()).filter(Boolean)
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+  }
+  return []
+}
+
 export function AddToCart({ variants }: { variants: V[] }) {
   const { qty, loading, change } = useCart()
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-  // Tüm varyantlardaki özellik anahtarlarını ve benzersiz değerlerini çıkar (örn: { renk: ['Siyah', 'Beyaz'], switch: ['Red', 'Blue'] })
   const axes = useMemo(() => {
     const map: Record<string, string[]> = {}
     for (const v of variants) {
       if (!v.options) continue
-      for (const [k, val] of Object.entries(v.options)) {
-        if (!val) continue
+      for (const [k, rawVal] of Object.entries(v.options)) {
+        const vals = parseValues(rawVal)
+        if (!vals.length) continue
         if (!map[k]) map[k] = []
-        if (!map[k].includes(val)) map[k].push(val)
+        for (const val of vals) {
+          if (!map[k].includes(val)) map[k].push(val)
+        }
       }
     }
     return map
@@ -42,71 +58,50 @@ export function AddToCart({ variants }: { variants: V[] }) {
   const axisKeys = Object.keys(axes)
   const firstInStock = variants.find((v) => v.stock > 0) ?? variants[0]
 
-  // Seçili eksen değerleri (örn: { renk: 'Siyah', switch: 'Red' })
-  const [selectedOpts, setSelectedOpts] = useState<Record<string, string>>(
-    () => firstInStock?.options ?? {}
-  )
+  const [selectedOpts, setSelectedOpts] = useState<Record<string, string>>({})
+
+  // Sayfa yüklendiğinde her özelliğin ilk seçeneğini (Örn: Siyah, Red, Kablolu) varsayılan seçili yap
+  useEffect(() => {
+    setSelectedOpts((prev) => {
+      const next = { ...prev }
+      for (const k of Object.keys(axes)) {
+        if (!next[k] || !axes[k].includes(next[k])) {
+          next[k] = axes[k][0]
+        }
+      }
+      return next
+    })
+  }, [axes])
 
   if (!variants.length) {
     return <p className="muted">Bu ürün için seçenek bulunamadı.</p>
   }
 
-  // Seçili eksenlere tam uyan varyantı bul (eksen yoksa ilk varyantı al)
+  const variantMatchesOption = (v: V, key: string, val: string) => {
+    if (!v.options) return false
+    return parseValues(v.options[key]).includes(val)
+  }
+
   const sel =
     axisKeys.length === 0
       ? firstInStock
       : variants.find(
           (v) =>
             v.options &&
-            axisKeys.every((k) => v.options?.[k] === selectedOpts[k])
-        )
+            axisKeys.every((k) => variantMatchesOption(v, k, selectedOpts[k]))
+        ) ?? firstInStock
 
-  // Bir eksendeki değere tıklandığında diğer seçimleri koruyarak en uygun varyanta geç
   const handleSelectAxis = (key: string, value: string) => {
     setMsg(null)
-    const nextOpts = { ...selectedOpts, [key]: value }
-
-    // 1. Tam eşleşen ve stokta olan var mı?
-    const exactInStock = variants.find(
-      (v) =>
-        v.stock > 0 &&
-        v.options &&
-        axisKeys.every((k) => v.options?.[k] === nextOpts[k])
-    )
-    if (exactInStock?.options) {
-      setSelectedOpts(exactInStock.options)
-      return
-    }
-
-    // 2. Tam eşleşen (stoksuz da olsa) var mı?
-    const exactAny = variants.find(
-      (v) =>
-        v.options && axisKeys.every((k) => v.options?.[k] === nextOpts[k])
-    )
-    if (exactAny?.options) {
-      setSelectedOpts(exactAny.options)
-      return
-    }
-
-    // 3. Bu değere sahip stokta olan ilk varyanta atla
-    const fallback =
-      variants.find((v) => v.stock > 0 && v.options?.[key] === value) ??
-      variants.find((v) => v.options?.[key] === value)
-
-    if (fallback?.options) {
-      setSelectedOpts(fallback.options)
-    } else {
-      setSelectedOpts(nextOpts)
-    }
+    setSelectedOpts((prev) => ({ ...prev, [key]: value }))
   }
 
-  // Bir butonun diğer mevcut seçimlerle geçerli/stokta bir kombinasyon oluşturup oluşturmadığını kontrol et
   const isOptionAvailable = (key: string, value: string) => {
     return variants.some(
       (v) =>
         v.stock > 0 &&
-        v.options?.[key] === value &&
-        axisKeys.every((k) => k === key || v.options?.[k] === selectedOpts[k])
+        variantMatchesOption(v, key, value) &&
+        axisKeys.every((k) => k === key || !selectedOpts[k] || variantMatchesOption(v, k, selectedOpts[k]))
     )
   }
 
@@ -133,12 +128,11 @@ export function AddToCart({ variants }: { variants: V[] }) {
         {sel ? formatTRY(sel.price) : '—'}
       </div>
 
-      {/* Özellik eksenleri (Renk, Switch, Bağlantı vb.) */}
       {axisKeys.map((key) => (
-        <div key={key} className="stack" style={{ gap: 6 }}>
-          <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
+        <div key={key} className="stack" style={{ gap: 8 }}>
+          <span className="muted" style={{ fontSize: 14, fontWeight: 500 }}>
             {KEY_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1)}:{' '}
-            <strong style={{ color: 'inherit' }}>{selectedOpts[key]}</strong>
+            <strong style={{ color: '#0f172a' }}>{selectedOpts[key]}</strong>
           </span>
           <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
             {axes[key].map((val) => {
@@ -149,7 +143,16 @@ export function AddToCart({ variants }: { variants: V[] }) {
                   key={val}
                   type="button"
                   className={`opt ${isSelected ? 'sel' : ''} ${!available ? 'off' : ''}`}
-                  style={{ color: 'inherit', fontWeight: isSelected ? 600 : 400 }}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    border: isSelected ? '2px solid #ea580c' : '1px solid #cbd5e1',
+                    background: isSelected ? '#fff7ed' : '#ffffff',
+                    color: isSelected ? '#ea580c' : '#1e293b',
+                    fontWeight: isSelected ? 600 : 400,
+                    cursor: available ? 'pointer' : 'not-allowed',
+                    opacity: available ? 1 : 0.5,
+                  }}
                   onClick={() => handleSelectAxis(key, val)}
                 >
                   {val}
@@ -160,7 +163,6 @@ export function AddToCart({ variants }: { variants: V[] }) {
         </div>
       ))}
 
-      {/* Stok Durumu */}
       <div className="muted" style={{ fontSize: 14 }}>
         {!sel
           ? 'Bu kombinasyon mevcut değil'
@@ -171,7 +173,6 @@ export function AddToCart({ variants }: { variants: V[] }) {
             : 'Tükendi'}
       </div>
 
-      {/* Sepet Butonu / Adet Kontrolü */}
       {!sel ? null : loading && inCartQty === 0 ? (
         <span className="muted" style={{ fontSize: 14 }}>
           Yükleniyor...
@@ -231,7 +232,7 @@ export function AddToCart({ variants }: { variants: V[] }) {
 
             <button
               type="button"
-              onClick={() => act(1)}
+              onClick={act.bind(null, 1)}
               disabled={inCartQty >= sel.stock}
               style={{
                 width: 28,
