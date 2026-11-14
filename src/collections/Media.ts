@@ -12,25 +12,20 @@ export const Media: CollectionConfig = {
   },
   upload: {
     disableLocalStorage: true,
+     focalPoint: false,
+    crop: false,
   },
   hooks: {
     beforeValidate: [
       ({ data, req }) => {
-        // Alt alanı boş bırakılırsa 400 hatası vermemesi için dosya adını otomatik ata
         if (!data) data = {}
-        if (!data.alt) {
-          data.alt = req.file?.name?.replace(/\.[^/.]+$/, '') || 'urun-gorseli'
-        }
-        return data
-      },
-    ],
-    beforeChange: [
-      ({ data, req }) => {
+        const cleanAlt = String(data.alt || req.file?.name?.replace(/\.[^/.]+$/, '') || 'gorsel').split(SEP)[0]
         if (req.file && req.file.data) {
           const mime = req.file.mimetype || 'image/png'
           const b64 = `data:${mime};base64,${req.file.data.toString('base64')}`
-          const cleanAlt = String(data.alt || 'gorsel').split(SEP)[0]
           data.alt = `${cleanAlt}${SEP}${b64}`
+        } else if (!data.alt) {
+          data.alt = cleanAlt
         }
         return data
       },
@@ -39,8 +34,10 @@ export const Media: CollectionConfig = {
   fields: [
     {
       name: 'alt',
-      type: 'text',
+      type: 'textarea', // Uzun Base64 verisi için text yerine textarea ve sınırsız validate
       required: false,
+      maxLength: 50000000,
+      validate: () => true,
     },
   ],
 }
