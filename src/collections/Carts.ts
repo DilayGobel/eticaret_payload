@@ -1,5 +1,27 @@
-import type { CollectionConfig, Where } from 'payload'
+﻿import type { CollectionConfig, Where } from 'payload'
 import { getGuestToken } from '../access/cartScope'
+
+const codeSlug = (s: string) =>
+  s
+    .toLocaleUpperCase('tr-TR')
+    .replace(/İ/g, 'I')
+    .replace(/Ğ/g, 'G')
+    .replace(/Ü/g, 'U')
+    .replace(/Ş/g, 'S')
+    .replace(/Ö/g, 'O')
+    .replace(/Ç/g, 'C')
+    .replace(/[^A-Z0-9]/g, '')
+
+const isExactMatch = (
+  a: Record<string, any> | null | undefined,
+  b: Record<string, string>,
+) => {
+  if (!a) return false
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+  if (keysA.length !== keysB.length) return false
+  return keysB.every((k) => String(a[k]).trim() === String(b[k]).trim())
+}
 
 export const Carts: CollectionConfig = {
   slug: 'carts',
@@ -47,7 +69,6 @@ export const Carts: CollectionConfig = {
     ],
   },
   endpoints: [
-    // ───────────── merge-guest ─────────────
     {
       path: '/merge-guest',
       method: 'post',
@@ -88,7 +109,7 @@ export const Carts: CollectionConfig = {
             collection: 'carts',
             data: { user: req.user.id },
             overrideAccess: true,
-            req, // <-- KRİTİK: hook req.user'ı görsün
+            req,
           })
         }
 
@@ -96,7 +117,7 @@ export const Carts: CollectionConfig = {
           collection: 'cart-items',
           where: { cart: { equals: guestCart.id } },
           pagination: false,
-          depth: 1, // stok için variant objesi lazım
+          depth: 1,
           overrideAccess: true,
         })
 
@@ -143,8 +164,6 @@ export const Carts: CollectionConfig = {
         return Response.json({ merged: true, cartId: userCart.id })
       },
     },
-
-    // ───────────── summary (yeni) ─────────────
     {
       path: '/summary',
       method: 'get',
@@ -184,19 +203,19 @@ export const Carts: CollectionConfig = {
         })
       },
     },
-
-    // ───────────── add-item (yeni) ─────────────
     {
       path: '/add-item',
       method: 'post',
       handler: async (req) => {
         const body = (typeof req.json === 'function' ? await req.json() : req.data) as
-          | { variantId?: string; delta?: number }
+          | { variantId?: string; delta?: number; selectedOptions?: Record<string, string> }
           | undefined
 
-        const variantId = body?.variantId
+        const baseVariantId = body?.variantId
         const delta = Number(body?.delta ?? 1)
-        if (!variantId || !delta) {
+        const selectedOptions = body?.selectedOptions
+
+        if (!baseVariantId || !delta) {
           return Response.json({ error: 'variantId ve delta zorunlu.' }, { status: 400 })
         }
 
@@ -209,7 +228,7 @@ export const Carts: CollectionConfig = {
           ? { user: { equals: req.user.id } }
           : { guestToken: { equals: guestToken as string } }
 
-        const [cartsRes, variant] = await Promise.all([
+        const [cartsRes, baseVariant] = await Promise.all([
           req.payload.find({
             collection: 'carts',
             where: cartWhere,
@@ -219,11 +238,61 @@ export const Carts: CollectionConfig = {
           }),
           req.payload.findByID({
             collection: 'product-variants',
-            id: variantId,
+            id: baseVariantId,
             depth: 0,
             overrideAccess: true,
           }),
         ])
+
+        let targetVariant = baseVariant
+
+        // Eğer kullanıcı belirli seçenekler (örn: Pembe / Blue / Kablosuz) seçtiyse ve ana varyant çoklu seçenek içeriyorsa,
+        // sadece seçilen seçeneklere sahip alt varyantı bul veya otomatik oluştur!
+        if (selectedOptions && Object.keys(selectedOptions).length > 0) {
+          const currentOpts = (baseVariant.options as Record<string, any>) || {}
+          if (!isExactMatch(currentOpts, selectedOptions)) {
+            const productId = String(baseVariant.product)
+            const allProductVariants = await req.payload.find({
+              collection: 'product-variants',
+              where: { product: { equals: productId } },
+              pagination: false,
+              depth: 0,
+              overrideAccess: true,
+            })
+
+            const matched = allProductVariants.docs.find((v) =>
+              isExactMatch(v.options as Record<string, any>, selectedOptions),
+            )
+
+            if (matched) {
+              targetVariant = matched
+            } else {
+              const baseSku = baseVariant.sku.split('-').slice(0, 2).join('-')
+              const optSuffix = Object.values(selectedOptions).map(codeSlug).join('-')
+              const candidateSku = `${baseSku}-${optSuffix}`
+
+              // SKU çakışmasını önle
+              const skuCheck = allProductVariants.docs.some((v) => v.sku === candidateSku)
+              const finalSku = skuCheck
+                ? `${candidateSku}-${Date.now().toString(36).slice(-3).toUpperCase()}`
+                : candidateSku
+
+              targetVariant = await req.payload.create({
+                collection: 'product-variants',
+                data: {
+                  product: productId,
+                  sku: finalSku,
+                  price: baseVariant.price,
+                  stock: baseVariant.stock,
+                  options: selectedOptions,
+                },
+                overrideAccess: true,
+              })
+            }
+          }
+        }
+
+        const variantId = String(targetVariant.id)
 
         const cart =
           cartsRes.docs[0] ??
@@ -231,7 +300,7 @@ export const Carts: CollectionConfig = {
             collection: 'carts',
             data: req.user ? { user: req.user.id } : { guestToken: guestToken as string },
             overrideAccess: true,
-            req, // beforeChange hook'u req.user / header'a bakıyor
+            req,
           }))
 
         const existingRes = await req.payload.find({
@@ -244,7 +313,7 @@ export const Carts: CollectionConfig = {
         const existing = existingRes.docs[0]
         const newQty = (existing?.quantity ?? 0) + delta
 
-        if (newQty > variant.stock) {
+        if (newQty > targetVariant.stock) {
           return Response.json({ error: 'Yetersiz stok.' }, { status: 409 })
         }
 

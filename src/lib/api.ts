@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 // Tarayıcıdan Payload REST API'sine giden ince katman.
 // Misafir sepeti için x-guest-token header'ı her istekte otomatik eklenir.
 
@@ -44,10 +44,10 @@ async function ensureCart() {
   return (await getCart()) ?? (await api('/carts', { method: 'POST', body: '{}' })).doc
 }
 
-export async function addToCart(variantId: string, delta: number) {
+export async function addToCart(variantId: string, delta: number, selectedOptions?: Record<string, string>) {
   return api('/carts/add-item', {
     method: 'POST',
-    body: JSON.stringify({ variantId, delta }),
+    body: JSON.stringify({ variantId, delta, selectedOptions }),
   })
 }
 

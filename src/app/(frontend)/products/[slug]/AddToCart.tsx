@@ -40,7 +40,6 @@ function parseValues(raw: unknown): string[] {
   return []
 }
 
-// Türkçe karakter duyarsız küçük harfe çevirme (görsel eşleştirmesi için)
 const norm = (s: string) =>
   s
     .toLocaleLowerCase('tr-TR')
@@ -69,6 +68,8 @@ export function AddToCart({
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [activeImgIdx, setActiveImgIdx] = useState(0)
+  // Dinamik oluşturulan alt varyantların ID'lerini kombinasyon anahtarına göre hafızada tut
+  const [resolvedIds, setResolvedIds] = useState<Record<string, string>>({})
 
   const axes = useMemo(() => {
     const map: Record<string, string[]> = {}
@@ -103,12 +104,10 @@ export function AddToCart({
     })
   }, [axes])
 
-  // Renk seçildiğinde ilgili görseli bul ve değiştir
   const switchImageForColor = (colorValue: string) => {
     if (!images.length) return
     const target = norm(colorValue)
 
-    // 1. Görselin alt metninde veya dosya adında renk adı geçiyor mu? (Örn: "pembe-klavye.png" veya alt="Pembe")
     const matchByTextIdx = images.findIndex(
       (img) =>
         (img.alt && norm(img.alt).includes(target)) ||
@@ -120,7 +119,6 @@ export function AddToCart({
       return
     }
 
-    // 2. Eşleşen isim yoksa, rengin sırasına göre görsel seç (1. renk -> 1. görsel, 2. renk -> 2. görsel)
     const colorAxisKey = Object.keys(axes).find((k) => norm(k) === 'renk' || norm(k) === 'color')
     if (colorAxisKey) {
       const colorIdx = axes[colorAxisKey].indexOf(colorValue)
@@ -130,19 +128,38 @@ export function AddToCart({
     }
   }
 
+  useEffect(() => {
+    const colorAxisKey = Object.keys(axes).find((k) => norm(k) === 'renk' || norm(k) === 'color')
+    if (colorAxisKey && selectedOpts[colorAxisKey]) {
+      switchImageForColor(selectedOpts[colorAxisKey])
+    }
+  }, [selectedOpts, axes])
+
   const variantMatchesOption = (v: V, key: string, val: string) => {
     if (!v.options) return false
     return parseValues(v.options[key]).includes(val)
   }
 
+  // Önce birebir tekil eşleşen varyantı ara, yoksa kapsayan ana varyantı al
+  const exactVariant = variants.find(
+    (v) =>
+      v.options &&
+      axisKeys.length > 0 &&
+      axisKeys.every((k) => String(v.options?.[k] || '').trim() === selectedOpts[k])
+  )
+
   const sel =
-    axisKeys.length === 0
+    exactVariant ??
+    (axisKeys.length === 0
       ? firstInStock
       : variants.find(
           (v) =>
             v.options &&
             axisKeys.every((k) => variantMatchesOption(v, k, selectedOpts[k]))
-        ) ?? firstInStock
+        ) ?? firstInStock)
+
+  const comboKey = JSON.stringify(selectedOpts)
+  const effectiveVariantId = exactVariant?.id ?? resolvedIds[comboKey] ?? sel?.id
 
   const handleSelectAxis = (key: string, value: string) => {
     setMsg(null)
@@ -161,7 +178,11 @@ export function AddToCart({
     )
   }
 
-  const inCartQty = sel ? qty[String(sel.id)] || 0 : 0
+  // Sadece birebir seçili kombinasyonun sepetteki adedini göster
+  const inCartQty =
+    exactVariant || resolvedIds[comboKey] || axisKeys.length === 0
+      ? qty[String(effectiveVariantId)] || 0
+      : 0
 
   const act = async (delta: number) => {
     if (!sel || busy) return
@@ -170,7 +191,11 @@ export function AddToCart({
     setBusy(true)
     setMsg(null)
     try {
-      await change(String(sel.id), delta)
+      const targetId = String(exactVariant?.id ?? resolvedIds[comboKey] ?? sel.id)
+      const res = await change(targetId, delta, axisKeys.length > 0 ? selectedOpts : undefined)
+      if (res?.variantId) {
+        setResolvedIds((prev) => ({ ...prev, [comboKey]: String(res.variantId) }))
+      }
     } catch (e: any) {
       setMsg({ ok: false, text: e.message || 'Hata oluştu' })
     } finally {
@@ -182,7 +207,6 @@ export function AddToCart({
 
   return (
     <div className="two">
-      {/* SOL TARAF: Görsel Galerisi (Renk seçimine ve tıklamaya duyarlı) */}
       <div className="stack" style={{ gap: 12 }}>
         {activeImage?.url ? (
           <img
@@ -217,7 +241,9 @@ export function AddToCart({
                   style={{
                     width: 72,
                     height: 72,
-                    objectFit: 'contain', background: '#ffffff', padding: 4,
+                    objectFit: 'contain',
+                    background: '#ffffff',
+                    padding: 4,
                     borderRadius: 8,
                     cursor: 'pointer',
                     border: isCurrent ? '2px solid #ea580c' : '1px solid #cbd5e1',
@@ -231,7 +257,6 @@ export function AddToCart({
         )}
       </div>
 
-      {/* SAĞ TARAF: Ürün Bilgileri & Seçenekler */}
       <div className="stack" style={{ gap: 16 }}>
         {productName && <h1 style={{ margin: 0 }}>{productName}</h1>}
         {sellerName && <div className="muted">Satıcı: {sellerName}</div>}
@@ -383,4 +408,3 @@ export function AddToCart({
     </div>
   )
 }
-

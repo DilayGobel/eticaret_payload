@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api, addToCart } from '@/lib/api'
 
@@ -7,7 +7,7 @@ type CartCtx = {
   loading: boolean
   count: number
   version: number
-  change: (variantId: string, delta: number) => Promise<void>
+  change: (variantId: string, delta: number, selectedOptions?: Record<string, string>) => Promise<any>
   refresh: () => Promise<void>
 }
 
@@ -32,26 +32,23 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-  refresh()
-  window.addEventListener('cart-changed', refresh)
-  return () => window.removeEventListener('cart-changed', refresh)
-}, [refresh])
+    refresh()
+    window.addEventListener('cart-changed', refresh)
+    return () => window.removeEventListener('cart-changed', refresh)
+  }, [refresh])
 
   const change = useCallback(
-    async (variantId: string, delta: number) => {
-      setQty((q) => ({ ...q, [variantId]: Math.max(0, (q[variantId] || 0) + delta) }))
-      pending.current[variantId] = (pending.current[variantId] || 0) + 1
+    async (variantId: string, delta: number, selectedOptions?: Record<string, string>) => {
       try {
-        const res = await addToCart(variantId, delta)
-        if (pending.current[variantId] === 1) {
-          setQty((q) => ({ ...q, [variantId]: res.quantity }))
-        }
+        const res = await addToCart(variantId, delta, selectedOptions)
+        const actualId = String(res.variantId || variantId)
+        setQty((q) => ({ ...q, [actualId]: res.quantity }))
         setVersion((v) => v + 1)
+        await refresh()
+        return res
       } catch (e) {
         await refresh()
         throw e
-      } finally {
-        pending.current[variantId] -= 1
       }
     },
     [refresh],
@@ -72,7 +69,6 @@ export function useCart() {
   return c
 }
 
-// Sepet / ödeme sayfaları için: detaylı (ağır) veri sadece orada çekilir.
 export function useCartDetails() {
   const { version } = useCart()
   const [items, setItems] = useState<any[]>([])
@@ -80,21 +76,21 @@ export function useCartDetails() {
 
   useEffect(() => {
     let cancelled = false
-      ; (async () => {
-        try {
-          const cart = await api('/carts/summary')
-          if (!cart.cartId) {
-            if (!cancelled) setItems([])
-            return
-          }
-          const res = await api(
-            `/cart-items?where[cart][equals]=${cart.cartId}&depth=3&limit=100&sort=createdAt`,
-          )
-          if (!cancelled) setItems(res.docs || [])
-        } finally {
-          if (!cancelled) setLoading(false)
+    ;(async () => {
+      try {
+        const cart = await api('/carts/summary')
+        if (!cart.cartId) {
+          if (!cancelled) setItems([])
+          return
         }
-      })()
+        const res = await api(
+          `/cart-items?where[cart][equals]=${cart.cartId}&depth=3&limit=100&sort=createdAt`,
+        )
+        if (!cancelled) setItems(res.docs || [])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
     return () => {
       cancelled = true
     }
