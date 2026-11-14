@@ -5,9 +5,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, uploadMedia } from '@/lib/api'
 import { formatTRY } from '@/lib/money'
 
-// "renk=Siyah, beden=42" -> { renk: 'Siyah', beden: '42' }
-const parseOptions = (s: string) =>
-  Object.fromEntries(s.split(',').map((p) => p.split('=').map((x) => x.trim())).filter(([k, v]) => k && v))
+const code = (s: string) =>
+  s
+    .toLocaleUpperCase('tr-TR')
+    .replace(/İ/g, 'I')
+    .replace(/Ğ/g, 'G')
+    .replace(/Ü/g, 'U')
+    .replace(/Ş/g, 'S')
+    .replace(/Ö/g, 'O')
+    .replace(/Ç/g, 'C')
+    .replace(/[^A-Z0-9]/g, '')
 
 export default function EditProduct() {
   const { id } = useParams<{ id: string }>()
@@ -15,7 +22,16 @@ export default function EditProduct() {
   const [categories, setCategories] = useState<any[]>([])
   const [variants, setVariants] = useState<any[]>([])
   const [msg, setMsg] = useState('')
-  const [nv, setNv] = useState({ sku: '', price: '', stock: '', options: '' })
+
+  // Çoklu renk ve özellik destekli varyant formu
+  const [nv, setNv] = useState({
+    skuPrefix: '',
+    price: '',
+    stock: '',
+    colors: '', // Örn: "Siyah, Beyaz, Kırmızı"
+    attrName: 'beden', // Örn: "beden", "switch", "baglanti"
+    attrValues: '', // Örn: "S, M, L" veya "Red, Blue"
+  })
   const [stockIn, setStockIn] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
@@ -24,125 +40,316 @@ export default function EditProduct() {
       api(`/product-variants?where[product][equals]=${id}&limit=100&depth=0`),
       api('/categories?limit=200&depth=0'),
     ])
-    setProduct(p); setVariants(v.docs); setCategories(c.docs)
+    setProduct(p)
+    setVariants(v.docs)
+    setCategories(c.docs)
   }, [id])
-  useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   const run = async (fn: () => Promise<any>, ok = 'Kaydedildi.') => {
     setMsg('')
-    try { await fn(); setMsg(ok); await load() } catch (e: any) { setMsg(e.message) }
+    try {
+      await fn()
+      setMsg(ok)
+      await load()
+    } catch (e: any) {
+      setMsg(e.message)
+    }
   }
 
   if (!product) return <p className="muted">Yükleniyor…</p>
 
-  const saveProduct = () => run(() => api(`/products/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      name: product.name,
-      description: product.description,
-      status: product.status,
-      category: typeof product.category === 'object' ? product.category.id : product.category,
-    }),
-  }))
+  const saveProduct = () =>
+    run(() =>
+      api(`/products/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: product.name,
+          description: product.description,
+          status: product.status,
+          category: typeof product.category === 'object' ? product.category.id : product.category,
+        }),
+      }),
+    )
 
-  const addImage = (file: File) => run(async () => {
-    const media = await uploadMedia(file, product.name)
-    const ids = (product.images || []).map((i: any) => (typeof i === 'object' ? i.id : i))
-    await api(`/products/${id}`, { method: 'PATCH', body: JSON.stringify({ images: [...ids, media.id] }) })
-  }, 'Görsel eklendi.')
+  const addImage = (file: File) =>
+    run(async () => {
+      const media = await uploadMedia(file, product.name)
+      const ids = (product.images || []).map((i: any) => (typeof i === 'object' ? i.id : i))
+      await api(`/products/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ images: [...ids, media.id] }),
+      })
+    }, 'Görsel eklendi.')
 
-  const removeImage = (imgId: string) => run(() => {
-    const ids = (product.images || []).map((i: any) => (typeof i === 'object' ? i.id : i)).filter((x: string) => x !== imgId)
-    return api(`/products/${id}`, { method: 'PATCH', body: JSON.stringify({ images: ids }) })
-  })
+  const removeImage = (imgId: string) =>
+    run(() => {
+      const ids = (product.images || [])
+        .map((i: any) => (typeof i === 'object' ? i.id : i))
+        .filter((x: string) => x !== imgId)
+      return api(`/products/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ images: ids }),
+      })
+    })
 
+  // Birden fazla rengi ve özelliği tek seferde kombinasyonlayıp varyant olarak ekler
   const addVariant = (e: React.FormEvent) => {
     e.preventDefault()
     run(async () => {
       const price = Math.round(Number(nv.price.replace(',', '.')) * 100) // TL -> kuruş
-      const res = await api('/product-variants', {
-        method: 'POST',
-        body: JSON.stringify({ product: id, sku: nv.sku, price, options: parseOptions(nv.options) }),
-      })
       const initial = parseInt(nv.stock, 10)
-      if (initial > 0) {
-        await api('/inventory-logs', { method: 'POST', body: JSON.stringify({ variant: res.doc.id, change: initial, reason: 'restock', referenceId: 'ilk-stok' }) })
+
+      const colorList = nv.colors
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const extraList = nv.attrValues
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const extraKey = nv.attrName.trim().toLowerCase() || 'secenek'
+
+      // Kombinasyonları oluştur
+      let combos: Record<string, string>[] = [{}]
+      if (colorList.length > 0) {
+        combos = combos.flatMap((c) => colorList.map((col) => ({ ...c, renk: col })))
       }
-      setNv({ sku: '', price: '', stock: '', options: '' })
-    }, 'Varyant eklendi.')
+      if (extraList.length > 0) {
+        combos = combos.flatMap((c) => extraList.map((val) => ({ ...c, [extraKey]: val })))
+      }
+
+      const prefix = code(nv.skuPrefix || product.name.slice(0, 4) || 'URN')
+
+      for (const options of combos) {
+        const optValues = Object.values(options)
+        const suffix = optValues.length > 0 ? '-' + optValues.map(code).join('-') : ''
+        const sku = combos.length === 1 && nv.skuPrefix ? nv.skuPrefix.trim() : `${prefix}${suffix}`
+
+        const res = await api('/product-variants', {
+          method: 'POST',
+          body: JSON.stringify({
+            product: id,
+            sku,
+            price,
+            options,
+          }),
+        })
+
+        if (initial > 0) {
+          await api('/inventory-logs', {
+            method: 'POST',
+            body: JSON.stringify({
+              variant: res.doc.id,
+              change: initial,
+              reason: 'restock',
+              referenceId: 'ilk-stok',
+            }),
+          })
+        }
+      }
+
+      setNv({ skuPrefix: '', price: '', stock: '', colors: '', attrName: 'beden', attrValues: '' })
+    }, 'Varyant(lar) başarıyla eklendi.')
   }
 
   const changePrice = (v: any) => {
     const input = prompt('Yeni fiyat (TL):', String(v.price / 100))
     if (!input) return
-    run(() => api(`/product-variants/${v.id}`, { method: 'PATCH', body: JSON.stringify({ price: Math.round(Number(input.replace(',', '.')) * 100) }) }))
+    run(() =>
+      api(`/product-variants/${v.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ price: Math.round(Number(input.replace(',', '.')) * 100) }),
+      }),
+    )
   }
 
   const addStock = (v: any) => {
     const change = parseInt(stockIn[v.id] || '', 10)
     if (!change) return
     run(async () => {
-      await api('/inventory-logs', { method: 'POST', body: JSON.stringify({ variant: v.id, change, reason: change > 0 ? 'restock' : 'manual_correction' }) })
+      await api('/inventory-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          variant: v.id,
+          change,
+          reason: change > 0 ? 'restock' : 'manual_correction',
+        }),
+      })
       setStockIn({ ...stockIn, [v.id]: '' })
     }, 'Stok güncellendi.')
   }
 
+  const images = (product.images || []).filter((i: any) => typeof i === 'object')
+
   return (
     <div className="stack">
       <h1>{product.name}</h1>
-      {msg && <div className="muted">{msg}</div>}
+      {msg && <div className="muted" style={{ color: '#10b981', fontWeight: 600 }}>{msg}</div>}
 
       <div className="panel stack">
         <h3 style={{ margin: 0 }}>Ürün Bilgisi</h3>
-        <input value={product.name} onChange={(e) => setProduct({ ...product, name: e.target.value })} />
-        <textarea rows={4} value={product.description || ''} onChange={(e) => setProduct({ ...product, description: e.target.value })} />
-        <select value={typeof product.category === 'object' ? product.category.id : product.category} onChange={(e) => setProduct({ ...product, category: e.target.value })}>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        <input
+          value={product.name}
+          onChange={(e) => setProduct({ ...product, name: e.target.value })}
+        />
+        <textarea
+          rows={4}
+          value={product.description || ''}
+          onChange={(e) => setProduct({ ...product, description: e.target.value })}
+        />
+        <select
+          value={typeof product.category === 'object' ? product.category.id : product.category}
+          onChange={(e) => setProduct({ ...product, category: e.target.value })}
+        >
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
         </select>
-        <select value={product.status} onChange={(e) => setProduct({ ...product, status: e.target.value })}>
+        <select
+          value={product.status}
+          onChange={(e) => setProduct({ ...product, status: e.target.value })}
+        >
           <option value="draft">Taslak</option>
           <option value="published">Yayında</option>
           <option value="archived">Arşivlendi</option>
         </select>
-        {product.status === 'published' && variants.length === 0 && <div className="error">Yayında ama varyantı yok; vitrinde “Stokta yok” görünür.</div>}
-        <button onClick={saveProduct}>Kaydet</button>
+        {product.status === 'published' && variants.length === 0 && (
+          <div className="error">Yayında ama varyantı yok; vitrinde “Stokta yok” görünür.</div>
+        )}
+        <button type="button" onClick={saveProduct}>
+          Ürünü Kaydet
+        </button>
       </div>
 
+      {/* Görseller */}
       <div className="panel stack">
         <h3 style={{ margin: 0 }}>Görseller</h3>
-        <div className="row" style={{ flexWrap: 'wrap' }}>
-          {(product.images || []).filter((i: any) => typeof i === 'object').map((i: any) => (
-            <div key={i.id} className="stack" style={{ gap: 4 }}>
-              <img src={i.url} alt={i.alt} style={{ width: 90, height: 90, objectFit: 'cover', borderRadius: 8 }} />
-              <button className="secondary" onClick={() => removeImage(i.id)}>Kaldır</button>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
+          {images.map((img: any) => (
+            <div key={img.id} style={{ position: 'relative' }}>
+              <img
+                src={img.url}
+                alt={img.alt || ''}
+                style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8 }}
+              />
+              <button
+                type="button"
+                onClick={() => removeImage(img.id)}
+                style={{
+                  position: 'absolute',
+                  top: 4,
+                  right: 4,
+                  padding: '2px 6px',
+                  fontSize: 12,
+                }}
+              >
+                Sil
+              </button>
             </div>
           ))}
         </div>
-        <input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && addImage(e.target.files[0])} />
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => e.target.files?.[0] && addImage(e.target.files[0])}
+        />
       </div>
 
+      {/* Varyantlar */}
       <div className="panel stack">
-        <h3 style={{ margin: 0 }}>Varyantlar ve Stok</h3>
+        <h3 style={{ margin: 0 }}>Varyantlar & Renk Seçenekleri</h3>
+
+        {variants.length === 0 && <p className="muted">Henüz varyant eklenmedi.</p>}
+
         {variants.map((v) => (
-          <div key={v.id} className="line">
+          <div key={v.id} className="line" style={{ gap: 12, flexWrap: 'wrap' }}>
             <div style={{ flex: 1 }}>
-              <strong>{v.sku}</strong> <span className="muted">{v.options ? Object.entries(v.options).map(([k, x]) => `${k}: ${x}`).join(', ') : ''}</span>
-              <div>{formatTRY(v.price)} · stok: <strong>{v.stock}</strong></div>
+              <strong>{v.sku}</strong>
+              {v.options && Object.keys(v.options).length > 0 && (
+                <span className="muted" style={{ marginLeft: 8 }}>
+                  ({Object.entries(v.options).map(([k, val]) => `${k}: ${val}`).join(', ')})
+                </span>
+              )}
             </div>
-            <button className="secondary" onClick={() => changePrice(v)}>Fiyat</button>
-            <input type="number" placeholder="± adet" value={stockIn[v.id] || ''} onChange={(e) => setStockIn({ ...stockIn, [v.id]: e.target.value })} style={{ width: 90 }} />
-            <button onClick={() => addStock(v)}>Stok Gir</button>
+            <div>{formatTRY(v.price)}</div>
+            <button type="button" className="opt" onClick={() => changePrice(v)}>
+              Fiyat Değiştir
+            </button>
+            <div className="muted">Stok: {v.stock}</div>
+            <div className="row" style={{ gap: 6 }}>
+              <input
+                style={{ width: 80 }}
+                placeholder="+/- stok"
+                value={stockIn[v.id] || ''}
+                onChange={(e) => setStockIn({ ...stockIn, [v.id]: e.target.value })}
+              />
+              <button type="button" className="opt" onClick={() => addStock(v)}>
+                Uygula
+              </button>
+            </div>
           </div>
         ))}
-        <form className="stack" onSubmit={addVariant}>
-          <h4 style={{ margin: '12px 0 0' }}>Yeni varyant</h4>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            <input placeholder="SKU (benzersiz)" value={nv.sku} onChange={(e) => setNv({ ...nv, sku: e.target.value })} required />
-            <input placeholder="Fiyat (TL)" value={nv.price} onChange={(e) => setNv({ ...nv, price: e.target.value })} required style={{ width: 120 }} />
-            <input type="number" placeholder="İlk stok" value={nv.stock} onChange={(e) => setNv({ ...nv, stock: e.target.value })} style={{ width: 100 }} />
-            <input placeholder="Seçenekler: renk=Siyah, beden=42" value={nv.options} onChange={(e) => setNv({ ...nv, options: e.target.value })} style={{ flex: 1, minWidth: 220 }} />
+
+        <hr style={{ borderColor: 'rgba(255,255,255,0.1)', width: '100%' }} />
+
+        <form className="stack" onSubmit={addVariant} style={{ gap: 10 }}>
+          <h4 style={{ margin: 0 }}>Yeni Renk / Varyant Ekle (Çoklu Ekleyebilirsin)</h4>
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            <input
+              placeholder="SKU Ön Eki (örn: KLV)"
+              value={nv.skuPrefix}
+              onChange={(e) => setNv({ ...nv, skuPrefix: e.target.value })}
+              required
+            />
+            <input
+              placeholder="Fiyat (TL, örn: 1299)"
+              value={nv.price}
+              onChange={(e) => setNv({ ...nv, price: e.target.value })}
+              required
+            />
+            <input
+              placeholder="Başlangıç Stoğu (örn: 10)"
+              value={nv.stock}
+              onChange={(e) => setNv({ ...nv, stock: e.target.value })}
+              required
+            />
           </div>
-          <button style={{ alignSelf: 'flex-start' }}>Varyant Ekle</button>
+
+          <div className="stack" style={{ gap: 6 }}>
+            <label className="muted" style={{ fontSize: 13 }}>
+              Renkler (Birden fazla rengi virgülle ayırarak yaz: örn. <b>Siyah, Beyaz, Kırmızı, Mavi</b>)
+            </label>
+            <input
+              placeholder="Siyah, Beyaz, Kırmızı"
+              value={nv.colors}
+              onChange={(e) => setNv({ ...nv, colors: e.target.value })}
+            />
+          </div>
+
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            <input
+              style={{ flex: 1 }}
+              placeholder="Ek Özellik Adı (örn: switch, beden, baglanti)"
+              value={nv.attrName}
+              onChange={(e) => setNv({ ...nv, attrName: e.target.value })}
+            />
+            <input
+              style={{ flex: 2 }}
+              placeholder="Ek Özellik Değerleri (opsiyonel, virgülle: Red, Blue veya S, M, L)"
+              value={nv.attrValues}
+              onChange={(e) => setNv({ ...nv, attrValues: e.target.value })}
+            />
+          </div>
+
+          <button type="submit" className="btn">
+            Varyant(ları) Oluştur
+          </button>
         </form>
       </div>
     </div>

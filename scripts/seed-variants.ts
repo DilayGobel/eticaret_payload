@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { getPayload } from 'payload'
 import config from '@payload-config'
 
@@ -7,8 +8,9 @@ const PRICE = 129900 // kuruş
 const STOCK = 10
 
 const axes: Record<string, string[]> = {
-  renk: ['Siyah', 'Beyaz', 'Kırmızı'],      // istediğin kadar renk ekle
+  renk: ['Siyah', 'Beyaz', 'Kırmızı'],
   switch: ['Red', 'Blue', 'Brown'],
+  baglanti: ['Kablolu', 'Kablosuz'], // Yeni eklenen özellik
 }
 
 const combos = Object.entries(axes).reduce<Record<string, string>[]>(
@@ -19,20 +21,39 @@ const combos = Object.entries(axes).reduce<Record<string, string>[]>(
 const code = (s: string) =>
   s.toLocaleUpperCase('tr-TR').replace(/İ/g, 'I').replace(/[^A-Z0-9]/g, '')
 
+// İki options objesinin aynı kombinasyon olup olmadığını kontrol eder
+const isSameOptions = (
+  a: Record<string, string> | null | undefined,
+  b: Record<string, string>,
+) => {
+  if (!a) return false
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+  if (keysA.length !== keysB.length) return false
+  return keysB.every((k) => a[k] === b[k])
+}
+
 async function main() {
   const payload = await getPayload({ config })
 
+  // Ürüne ait mevcut tüm varyantları tek seferde çek
+  const existingRes = await payload.find({
+    collection: 'product-variants',
+    where: { product: { equals: PRODUCT_ID } },
+    pagination: false,
+    depth: 0,
+    overrideAccess: true,
+  })
+
   for (const options of combos) {
+    const alreadyExists = existingRes.docs.some((doc) =>
+      isSameOptions(doc.options as Record<string, string> | null, options),
+    )
+
     const sku = [SKU_PREFIX, ...Object.values(options).map(code)].join('-')
 
-    const exists = await payload.find({
-      collection: 'product-variants',
-      where: { sku: { equals: sku } },
-      limit: 1,
-      depth: 0,
-    })
-    if (exists.docs[0]) {
-      console.log('atlandı (var):', sku)
+    if (alreadyExists) {
+      console.log('atlandı (kombinasyon var):', options)
       continue
     }
 
@@ -45,4 +66,5 @@ async function main() {
   }
   process.exit(0)
 }
+
 main()
