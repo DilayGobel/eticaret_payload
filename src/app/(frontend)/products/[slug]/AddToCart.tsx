@@ -191,7 +191,10 @@ export function AddToCart({
             style={{
               width: '100%',
               aspectRatio: '1 / 1',
-              objectFit: 'cover',
+              objectFit: 'contain',
+              background: '#ffffff',
+              padding: 16,
+              maxHeight: 420,
               borderRadius: 12,
               border: '1px solid #e2e8f0',
               transition: 'all 0.2s ease',
@@ -214,7 +217,7 @@ export function AddToCart({
                   style={{
                     width: 72,
                     height: 72,
-                    objectFit: 'cover',
+                    objectFit: 'contain', background: '#ffffff', padding: 4,
                     borderRadius: 8,
                     cursor: 'pointer',
                     border: isCurrent ? '2px solid #ea580c' : '1px solid #cbd5e1',
@@ -380,3 +383,4 @@ export function AddToCart({
     </div>
   )
 }
+
