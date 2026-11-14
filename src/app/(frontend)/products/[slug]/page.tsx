@@ -3,6 +3,8 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { AddToCart } from './AddToCart'
 
+const SEP = '|||'
+
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const decodedSlug = decodeURIComponent(slug)
@@ -33,13 +35,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   })
 
   const images = (product.images || [])
-    .filter((i): i is any => typeof i === 'object' && Boolean(i?.url))
-    .map((i) => ({
-      id: String(i.id),
-      url: String(i.url),
-      alt: i.alt ? String(i.alt) : '',
-      filename: i.filename ? String(i.filename) : '',
-    }))
+    .filter((i): i is any => typeof i === 'object' && Boolean(i?.url || i?.alt))
+    .map((i) => {
+      const rawAlt = String(i.alt || '')
+      const [cleanAlt, embeddedB64] = rawAlt.includes(SEP) ? rawAlt.split(SEP) : [rawAlt, '']
+      return {
+        id: String(i.id),
+        url: embeddedB64 || String(i.url || ''),
+        alt: cleanAlt,
+        filename: i.filename ? String(i.filename) : '',
+      }
+    })
 
   const seller = typeof product.seller === 'object' ? product.seller : null
 

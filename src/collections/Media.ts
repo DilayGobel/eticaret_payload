@@ -14,27 +14,25 @@ export const Media: CollectionConfig = {
     disableLocalStorage: true,
   },
   hooks: {
+    beforeValidate: [
+      ({ data, req }) => {
+        // Alt alanı boş bırakılırsa 400 hatası vermemesi için dosya adını otomatik ata
+        if (!data) data = {}
+        if (!data.alt) {
+          data.alt = req.file?.name?.replace(/\.[^/.]+$/, '') || 'urun-gorseli'
+        }
+        return data
+      },
+    ],
     beforeChange: [
       ({ data, req }) => {
         if (req.file && req.file.data) {
           const mime = req.file.mimetype || 'image/png'
           const b64 = `data:${mime};base64,${req.file.data.toString('base64')}`
-          const cleanAlt = (data.alt || '').split(SEP)[0]
-          // Migration gerektirmemek için Base64 verisini mevcut metin sütununda sakla
+          const cleanAlt = String(data.alt || 'gorsel').split(SEP)[0]
           data.alt = `${cleanAlt}${SEP}${b64}`
-          data.url = b64
         }
         return data
-      },
-    ],
-    afterRead: [
-      ({ doc }) => {
-        if (doc && typeof doc.alt === 'string' && doc.alt.includes(SEP)) {
-          const [cleanAlt, b64] = doc.alt.split(SEP)
-          doc.alt = cleanAlt
-          doc.url = b64
-        }
-        return doc
       },
     ],
   },
@@ -42,21 +40,7 @@ export const Media: CollectionConfig = {
     {
       name: 'alt',
       type: 'text',
-      required: true,
-    },
-    {
-      name: 'url',
-      type: 'text',
-      hooks: {
-        afterRead: [
-          ({ value, siblingData }) => {
-            if (typeof siblingData?.alt === 'string' && siblingData.alt.includes(SEP)) {
-              return siblingData.alt.split(SEP)[1]
-            }
-            return value
-          },
-        ],
-      },
+      required: false,
     },
   ],
 }
