@@ -1,10 +1,12 @@
-import Link from 'next/link'
+﻿import Link from 'next/link'
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { formatTRY } from '@/lib/money'
 import { HomeAddToCart } from '@/components/HomeAddToCart'
+import { ProductCardImage } from '@/components/ProductCardImage'
 
 const PAGE_SIZE = 12
+const SEP = '|||'
 
 export default async function HomePage({
   searchParams,
@@ -86,12 +88,26 @@ export default async function HomePage({
       ) : (
         <div className="grid">
           {products.docs.map((p) => {
-            const img = Array.isArray(p.images) && typeof p.images[0] === 'object' ? p.images[0] : null
+            const imgs = (Array.isArray(p.images) ? p.images : [])
+              .filter((i): i is any => typeof i === 'object' && Boolean(i?.url || i?.alt))
+              .map((i) => {
+                const rawAlt = String(i.alt || '')
+                const [cleanAlt, embeddedB64] = rawAlt.includes(SEP)
+                  ? rawAlt.split(SEP)
+                  : [rawAlt, '']
+                return {
+                  id: String(i.id),
+                  url: embeddedB64 || String(i.url || ''),
+                  alt: cleanAlt,
+                  filename: i.filename ? String(i.filename) : '',
+                }
+              })
+
             const item = variantData.get(String(p.id))
 
             return (
               <Link key={p.id} href={`/products/${p.slug}`} className="card">
-                {img?.url ? <img src={img.url} alt={img.alt} /> : <div className="ph" />}
+                <ProductCardImage images={imgs} productName={p.name} />
                 <div className="pad">
                   <div style={{ fontWeight: 500, marginBottom: 4 }}>{p.name}</div>
                   <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
