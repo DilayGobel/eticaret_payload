@@ -41,22 +41,22 @@ export const ProductVariants: CollectionConfig = {
         ],
     },
     fields: [
-        { 
-            name: 'product', 
-            type: 'relationship', 
-            relationTo: 'products', 
-            required: true, 
-            index: true 
+        {
+            name: 'product',
+            type: 'relationship',
+            relationTo: 'products',
+            required: true,
+            index: true
         },
-        { 
-            name: 'sku', 
-            type: 'text', 
-            required: true, 
-            unique: true, 
-            index: true 
+        {
+            name: 'sku',
+            type: 'text',
+            required: true,
+            unique: true,
+            index: true
         },
-        { 
-            name: 'barcode', 
+        {
+            name: 'barcode',
             type: 'text'
         },
         {
@@ -72,15 +72,13 @@ export const ProductVariants: CollectionConfig = {
                 return true
             },
         },
+        // ProductVariants.ts → fields
         {
-            name: 'stock',
-            type: 'number',
-            required: true,
-            defaultValue: 0,
-            min: 0,
-            // Stok sadece Inventory Logs üzerinden değişir (denetim izi). Doğrudan düzenleme kapalı.
-            access: { update: () => false },
-            admin: { description: 'Stok girişi için Inventory Logs kullanın.' },
+            name: 'stock', type: 'number', required: true, defaultValue: 0, min: 0,
+            access: {
+                create: ({ req: { user } }) => user?.role === 'admin',
+                update: ({ req: { user } }) => user?.role === 'admin',
+            },
         },
         {
             name: 'options',

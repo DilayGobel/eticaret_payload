@@ -25,8 +25,9 @@ export const InventoryLogs: CollectionConfig = {
     create: async ({ req, data }) => {
       if (req.user?.role === 'admin') return true
       if (req.user?.role === 'seller') {
+        if (!['restock', 'manual_correction'].includes(data?.reason)) return false
         const variantIds = await getOwnVariantIds(req)
-        return variantIds.includes(String(data?.variant)) // sadece kendi varyantlarına stok girişi
+        return variantIds.includes(String(data?.variant))
       }
       return false
     }, // sistem akışları overrideAccess ile geçer

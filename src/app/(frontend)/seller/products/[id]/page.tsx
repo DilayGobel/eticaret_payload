@@ -69,8 +69,8 @@ export default function EditProduct() {
         body: JSON.stringify({
           name: product.name,
           description: product.description,
-          status: product.status,
           category: typeof product.category === 'object' ? product.category.id : product.category,
+          ...(['draft', 'archived'].includes(product.status) ? { status: product.status } : {}),
         }),
       }),
     )
@@ -211,14 +211,19 @@ export default function EditProduct() {
             </option>
           ))}
         </select>
-        <select
-          value={product.status}
-          onChange={(e) => setProduct({ ...product, status: e.target.value })}
-        >
-          <option value="draft">Taslak</option>
-          <option value="published">Yayında</option>
-          <option value="archived">Arşivlendi</option>
-        </select>
+        {['draft', 'archived'].includes(product.status) ? (
+          <select
+            value={product.status}
+            onChange={(e) => setProduct({ ...product, status: e.target.value })}
+          >
+            <option value="draft">Taslak</option>
+            <option value="archived">Arşivlendi</option>
+          </select>
+        ) : (
+          <div className="muted">
+            Durum: {product.status === 'published' ? 'Yayında' : 'Reddedildi'} (yönetici tarafından belirlenir)
+          </div>
+        )}
         {product.status === 'published' && variants.length === 0 && (
           <div className="error">Yayında ama varyantı yok; vitrinde “Stokta yok” görünür.</div>
         )}

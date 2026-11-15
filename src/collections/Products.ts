@@ -1,4 +1,4 @@
-import type { CollectionConfig, Where } from 'payload'
+import type { CollectionConfig } from 'payload'
 import { getOwnSellerId } from '../access/sellerScope'
 
 export const Products: CollectionConfig = {
@@ -8,22 +8,9 @@ export const Products: CollectionConfig = {
     hidden: ({ user }) => user?.role === 'support',
   },
   access: {
-    // Vitrin sadece yayındaki ürünleri görür; satıcı kendi taslaklarını da görür.
-    read: async ({ req }): Promise<boolean | Where> => {
-      const user = req.user
-      if (user?.role === 'admin' || user?.role === 'support') return true
-      if (user?.role === 'seller') {
-        const sellerId = await getOwnSellerId(req)
-        if (sellerId) {
-          return {
-            or: [{ status: { equals: 'published' } }, { seller: { equals: sellerId } }],
-          }
-        }
-      }
-      return { status: { equals: 'published' } }
-    },
+    read: () => true,
     create: ({ req: { user } }) => Boolean(user?.role && ['admin', 'seller'].includes(user.role)),
-    update: async ({ req }): Promise<boolean | Where> => {
+    update: async ({ req }) => {
       if (req.user?.role === 'admin') return true
       if (req.user?.role === 'seller') {
         const sellerId = await getOwnSellerId(req)
@@ -35,25 +22,39 @@ export const Products: CollectionConfig = {
     delete: ({ req: { user } }) => user?.role === 'admin',
   },
   hooks: {
-    // beforeValidate: `seller` required olduğu için doğrulamadan ÖNCE doldurulmalı.
     beforeValidate: [
-      async ({ operation, data, req }) => {
-        if (operation === 'create' && req.user?.role === 'seller') {
-          const sellerId = await getOwnSellerId(req)
-          if (!sellerId) {
-            throw new Error('Ürün eklemeden önce bir mağazanız olmalı.')
-          }
+      async ({ operation, data, originalDoc, req }) => {
+        if (req.user?.role !== 'seller' || !data) return data
+
+        const sellerId = await getOwnSellerId(req)
+        if (!sellerId) {
+          throw new Error('Ürün eklemeden önce bir mağazanız olmalı.')
+        }
+
+        if (operation === 'create') {
           const seller = await req.payload.findByID({
             collection: 'sellers',
             id: sellerId,
             depth: 0,
-            overrideAccess: true,
           })
           if (seller.status !== 'approved') {
             throw new Error('Mağazanız henüz onaylanmadı, ürün ekleyemezsiniz.')
           }
-          data = { ...data, seller: sellerId }
         }
+
+        // Satıcı her zaman kendi mağazasına yazar; gönderdiği seller değeri yok sayılır.
+        data.seller = sellerId
+
+        // Yayına alma yetkisi sadece admin'de.
+        if (
+          data.status &&
+          data.status !== originalDoc?.status &&
+          !['draft', 'archived'].includes(data.status)
+        ) {
+          throw new Error('Ürünü yayına sadece yönetici alabilir. Taslak olarak kaydedin.')
+        }
+        if (operation === 'create' && !data.status) data.status = 'draft'
+
         return data
       },
     ],
@@ -61,14 +62,7 @@ export const Products: CollectionConfig = {
   fields: [
     { name: 'name', type: 'text', required: true },
     { name: 'slug', type: 'text', required: true, unique: true, index: true },
-    {
-      name: 'seller',
-      type: 'relationship',
-      relationTo: 'sellers',
-      required: true,
-      index: true,
-      access: { update: ({ req: { user } }) => user?.role === 'admin' }, // ürün başka mağazaya taşınamaz
-    },
+    { name: 'seller', type: 'relationship', relationTo: 'sellers', required: true, index: true },
     { name: 'category', type: 'relationship', relationTo: 'categories', required: true, index: true },
     { name: 'description', type: 'textarea' },
     { name: 'images', type: 'upload', relationTo: 'media', hasMany: true },

@@ -43,17 +43,14 @@ export const Sellers: CollectionConfig = {
       async ({ doc, previousDoc, req }) => {
         if (doc.status === 'approved' && previousDoc?.status !== 'approved') {
           const ownerId = typeof doc.owner === 'object' ? doc.owner.id : doc.owner
-          if (ownerId) {
-            await req.payload.update({
-              collection: 'users',
-              id: ownerId,
-              data: { role: 'seller' },
-              overrideAccess: true,
-              req, // Deadlock ve timeout'u önleyen kritik parametre
-            })
-          }
+          await req.payload.update({
+            collection: 'users',
+            id: ownerId,
+            data: { role: 'seller' },
+            overrideAccess: true,
+            req,
+          })
         }
-        return doc
       },
     ],
   },
