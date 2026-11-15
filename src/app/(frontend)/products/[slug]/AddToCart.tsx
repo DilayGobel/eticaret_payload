@@ -91,7 +91,23 @@ export function AddToCart({
   const firstInStock = variants.find((v) => v.stock > 0) ?? variants[0]
 
   const [selectedOpts, setSelectedOpts] = useState<Record<string, string>>({})
+  const colorAxisKey = axisKeys.find((k) => norm(k) === 'renk' || norm(k) === 'color')
 
+  const selectImage = (idx: number) => {
+    setActiveImgIdx(idx)
+    if (!colorAxisKey) return
+
+    const img = images[idx]
+    const text = norm(`${img?.alt || ''} ${img?.filename || ''}`)
+    // Önce görselin alt/dosya adında renk adı ara, yoksa görsel sırasına göre renk al
+    const color =
+      axes[colorAxisKey].find((c) => text.includes(norm(c))) ?? axes[colorAxisKey][idx]
+
+    if (color) {
+      setMsg(null)
+      setSelectedOpts((prev) => ({ ...prev, [colorAxisKey]: color }))
+    }
+  }
   useEffect(() => {
     setSelectedOpts((prev) => {
       const next = { ...prev }
@@ -153,10 +169,10 @@ export function AddToCart({
     (axisKeys.length === 0
       ? firstInStock
       : variants.find(
-          (v) =>
-            v.options &&
-            axisKeys.every((k) => variantMatchesOption(v, k, selectedOpts[k]))
-        ) ?? firstInStock)
+        (v) =>
+          v.options &&
+          axisKeys.every((k) => variantMatchesOption(v, k, selectedOpts[k]))
+      ) ?? firstInStock)
 
   const comboKey = JSON.stringify(selectedOpts)
   const effectiveVariantId = exactVariant?.id ?? resolvedIds[comboKey] ?? sel?.id
@@ -237,8 +253,7 @@ export function AddToCart({
                   key={img.id || idx}
                   src={img.url}
                   alt={img.alt || ''}
-                  onClick={() => setActiveImgIdx(idx)}
-                  style={{
+                  onClick={() => selectImage(idx)} style={{
                     width: 72,
                     height: 72,
                     objectFit: 'contain',
