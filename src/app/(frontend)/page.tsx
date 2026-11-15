@@ -1,9 +1,7 @@
 ﻿import Link from 'next/link'
 import { getPayload } from 'payload'
 import config from '@payload-config'
-import { formatTRY } from '@/lib/money'
-import { HomeAddToCart } from '@/components/HomeAddToCart'
-import { ProductCardImage } from '@/components/ProductCardImage'
+import { ProductCard, type CardVariant } from '@/components/ProductCard'
 
 const PAGE_SIZE = 12
 const SEP = '|||'
@@ -40,7 +38,7 @@ export default async function HomePage({
   })
 
   // Varyantları ve en ucuz fiyat / stok bilgisini eşleştir
-  const variantData = new Map<string, { price: number; variantId: string; stock: number }>()
+  const variantsByProduct = new Map<string, CardVariant[]>()
   if (products.docs.length) {
     const variants = await payload.find({
       collection: 'product-variants',
@@ -52,14 +50,14 @@ export default async function HomePage({
 
     for (const v of variants.docs) {
       const pid = String(v.product)
-      const current = variantData.get(pid)
-      if (!current || v.price < current.price) {
-        variantData.set(pid, {
-          price: v.price,
-          variantId: String(v.id),
-          stock: v.stock,
-        })
-      }
+      const list = variantsByProduct.get(pid) ?? []
+      list.push({
+        id: String(v.id),
+        price: v.price,
+        stock: v.stock,
+        options: v.options as any,
+      })
+      variantsByProduct.set(pid, list)
     }
   }
 
@@ -103,23 +101,14 @@ export default async function HomePage({
                 }
               })
 
-            const item = variantData.get(String(p.id))
-
             return (
-              <Link key={p.id} href={`/products/${p.slug}`} className="card">
-                <ProductCardImage images={imgs} productName={p.name} />
-                <div className="pad">
-                  <div style={{ fontWeight: 500, marginBottom: 4 }}>{p.name}</div>
-                  <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                    <div className="price" style={{ margin: 0 }}>
-                      {item ? formatTRY(item.price) : 'Stokta yok'}
-                    </div>
-                    {item && item.stock > 0 && (
-                      <HomeAddToCart variantId={item.variantId} stock={item.stock} />
-                    )}
-                  </div>
-                </div>
-              </Link>
+              <ProductCard
+                key={p.id}
+                slug={p.slug}
+                name={p.name}
+                images={imgs}
+                variants={variantsByProduct.get(String(p.id)) ?? []}
+              />
             )
           })}
         </div>
