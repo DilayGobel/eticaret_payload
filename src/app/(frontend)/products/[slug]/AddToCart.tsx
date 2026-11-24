@@ -223,6 +223,16 @@ export function AddToCart({
     }
   }
 
+  const prevImage = () => {
+    if (images.length <= 1) return
+    selectImage((activeImgIdx - 1 + images.length) % images.length)
+  }
+
+  const nextImage = () => {
+    if (images.length <= 1) return
+    selectImage((activeImgIdx + 1) % images.length)
+  }
+
   useEffect(() => {
     setSelectedOpts((prev) => {
       const next = { ...prev }
@@ -319,28 +329,90 @@ export function AddToCart({
 
   const activeImage = images[activeImgIdx] ?? images[0]
 
+  const arrowBtnStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: 38,
+    height: 38,
+    borderRadius: '50%',
+    border: '1px solid #cbd5e1',
+    background: 'rgba(255, 255, 255, 0.92)',
+    color: '#0f172a',
+    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.14)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    fontSize: 20,
+    fontWeight: 700,
+    lineHeight: 1,
+    padding: 0,
+    zIndex: 2,
+  }
+
   return (
     <div className="two">
       <div className="stack" style={{ gap: 12 }}>
-        {activeImage?.url ? (
-          <img
-            src={activeImage.url}
-            alt={activeImage.alt || productName || ''}
-            style={{
-              width: '100%',
-              aspectRatio: '1 / 1',
-              objectFit: 'contain',
-              background: '#ffffff',
-              padding: 16,
-              maxHeight: 420,
-              borderRadius: 12,
-              border: '1px solid #e2e8f0',
-              transition: 'all 0.2s ease',
-            }}
-          />
-        ) : (
-          <div className="ph" style={{ borderRadius: 12, minHeight: 360 }} />
-        )}
+        <div style={{ position: 'relative', width: '100%' }}>
+          {activeImage?.url ? (
+            <img
+              src={activeImage.url}
+              alt={activeImage.alt || productName || ''}
+              style={{
+                width: '100%',
+                aspectRatio: '1 / 1',
+                objectFit: 'contain',
+                background: '#ffffff',
+                padding: 16,
+                maxHeight: 420,
+                borderRadius: 12,
+                border: '1px solid #e2e8f0',
+                transition: 'all 0.2s ease',
+                display: 'block',
+              }}
+            />
+          ) : (
+            <div className="ph" style={{ borderRadius: 12, minHeight: 360 }} />
+          )}
+
+          {images.length > 1 && (
+            <>
+              <button
+                type="button"
+                aria-label="Önceki görsel"
+                onClick={prevImage}
+                style={{ ...arrowBtnStyle, left: 10 }}
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                aria-label="Sonraki görsel"
+                onClick={nextImage}
+                style={{ ...arrowBtnStyle, right: 10 }}
+              >
+                ›
+              </button>
+              <span
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  bottom: 10,
+                  background: 'rgba(15, 23, 42, 0.65)',
+                  color: '#ffffff',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  pointerEvents: 'none',
+                }}
+              >
+                {activeImgIdx + 1} / {images.length}
+              </span>
+            </>
+          )}
+        </div>
 
         {images.length > 1 && (
           <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
