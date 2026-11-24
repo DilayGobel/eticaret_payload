@@ -26,10 +26,30 @@ const norm = (s: string) =>
     .replace(/ı/g, 'i').replace(/ğ/g, 'g').replace(/ü/g, 'u')
     .replace(/ş/g, 's').replace(/ö/g, 'o').replace(/ç/g, 'c').trim()
 
-const colorOf = (v: CardVariant) => String(v.options?.renk ?? v.options?.color ?? '').trim()
+const hasWholeWord = (haystack: string, needle: string) => {
+  if (!haystack || !needle) return false
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(haystack)
+}
+
+const colorsOf = (v: CardVariant): string[] => {
+  const raw = v.options?.renk ?? v.options?.color
+  if (Array.isArray(raw)) {
+    return raw.flatMap((x) => String(x).split(',')).map((x) => x.trim()).filter(Boolean)
+  }
+  if (typeof raw === 'string') {
+    return raw.split(',').map((x) => x.trim()).filter(Boolean)
+  }
+  return []
+}
 
 const pickRep = (list: CardVariant[]) =>
-  [...list].sort((a, b) => Number(b.stock > 0) - Number(a.stock > 0) || a.price - b.price)[0]
+  [...list].sort(
+    (a, b) =>
+      Number(b.stock > 0) - Number(a.stock > 0) ||
+      Number(colorsOf(a).length === 1) - Number(colorsOf(b).length === 1) ||
+      a.price - b.price,
+  )[0]
 
 export function ProductCard({
   slug, name, images, variants,
@@ -42,8 +62,16 @@ export function ProductCard({
   const groups = useMemo(() => {
     const map = new Map<string, CardVariant[]>()
     for (const v of variants) {
-      const k = colorOf(v)
-      map.set(k, [...(map.get(k) ?? []), v])
+      const cols = colorsOf(v)
+      if (cols.length === 0) {
+        map.set('', [...(map.get('') ?? []), v])
+      } else {
+        for (const k of cols) {
+          const existing = map.get(k) ?? []
+          if (!existing.includes(v)) existing.push(v)
+          map.set(k, existing)
+        }
+      }
     }
     return [...map.entries()].map(([color, list]) => ({ color, list, rep: pickRep(list) }))
   }, [variants])
@@ -51,17 +79,29 @@ export function ProductCard({
   const colorToImgIdx = useMemo(() => {
     const res: Record<string, number> = {}
     const used = new Set<number>()
+    const normProduct = norm(name || '')
     const sorted = [...groups]
       .filter((g) => g.color)
       .sort((a, b) => norm(b.color).length - norm(a.color).length)
 
     for (const g of sorted) {
-      const t = norm(g.color)
+      const t = norm(g.color.split(',')[0])
+      if (!t) continue
       const idx = images.findIndex((img, i) => {
         if (used.has(i)) return false
         const alt = String(img.alt || '')
+        const altNorm = norm(alt)
         const suffix = alt.includes(' - ') ? norm(alt.split(' - ').pop() || '') : ''
-        return suffix === t || norm(alt).includes(t) || norm(img.filename || '').includes(t)
+        const fileBase = norm(String(img.filename || '').replace(/\.[^.]+$/, ''))
+        const altClean = normProduct ? altNorm.replace(normProduct, '').trim() : altNorm
+        return (
+          suffix === t ||
+          altNorm === t ||
+          hasWholeWord(altNorm, t) ||
+          hasWholeWord(fileBase, t) ||
+          altClean.includes(t) ||
+          fileBase.includes(t)
+        )
       })
       if (idx !== -1) {
         res[g.color] = idx
@@ -75,12 +115,13 @@ export function ProductCard({
       }
     })
     return res
-  }, [groups, images])
+  }, [groups, images, name])
 
   const initialColor = useMemo(() => {
-    if (!variants.length) return ''
-    return colorOf(pickRep(variants))
-  }, [variants])
+    if (!groups.length) return ''
+    const inStockGroup = groups.find((g) => g.list.some((v) => v.stock > 0)) ?? groups[0]
+    return inStockGroup.color
+  }, [groups])
 
   const [selColor, setSelColor] = useState(initialColor)
   const [imgIdx, setImgIdx] = useState(() => colorToImgIdx[initialColor] ?? 0)
