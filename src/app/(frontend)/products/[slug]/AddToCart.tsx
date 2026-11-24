@@ -99,54 +99,87 @@ export function AddToCart({
   const [selectedOpts, setSelectedOpts] = useState<Record<string, string>>({})
   const colorAxisKey = axisKeys.find((k) => norm(k) === 'renk' || norm(k) === 'color')
 
-  const findImageIndexForColor = (colorValue: string) => {
-    if (!images.length) return -1
-    const target = norm(colorValue.split(',')[0])
+  // Her rengi kendi görseline kesin olarak eşleştir (diğer renklerin görselini ezmeden)
+  const colorToImageIdx = useMemo(() => {
+    const result: Record<string, number> = {}
+    if (!colorAxisKey || !images.length) return result
 
-    // 1. Satıcı panelinden atanan renk etiketi ("Ürün Adı - Renk") ile tam eşleşme
-    const exactSuffixIdx = images.findIndex((img) => {
-      const alt = String(img.alt || '')
-      if (!alt.includes(' - ')) return false
-      const suffix = alt.split(' - ').pop() || ''
-      return norm(suffix) === target
-    })
-    if (exactSuffixIdx !== -1) return exactSuffixIdx
+    const colors = axes[colorAxisKey] || []
+    const normProduct = norm(productName || '')
+    const usedImgIndices = new Set<number>()
 
-    // 2. Dosya adında tam kelime eşleşmesi ("tasarım" içindeki "sarı" gibi yanlış eşleşmeleri önler)
-    const matchByFileIdx = images.findIndex((img) => {
-      const fileBase = norm(String(img.filename || '').replace(/\.[^.]+$/, ''))
-      return hasWholeWord(fileBase, target)
-    })
-    if (matchByFileIdx !== -1) return matchByFileIdx
+    // 1. Önce alt metni veya dosya adıyla eşleşen renkleri bağla
+    for (const color of colors) {
+      const target = norm(color.split(',')[0])
+      if (!target) continue
 
-    // 3. Eşleşme yoksa rengin listedeki sırasına göre görseli seç (1. renk -> 1. görsel, 4. renk -> 4. görsel)
-    if (colorAxisKey) {
-      const colorIdx = axes[colorAxisKey].indexOf(colorValue)
-      if (colorIdx !== -1 && images[colorIdx]) {
-        return colorIdx
+      // a) Tam eşleşme ("Siyah" veya "Ürün Adı - Siyah")
+      let idx = images.findIndex((img) => {
+        const alt = String(img.alt || '')
+        const altNorm = norm(alt)
+        const suffixNorm = alt.includes(' - ') ? norm(alt.split(' - ').pop() || '') : ''
+        return altNorm === target || suffixNorm === target
+      })
+
+      // b) Alt metin veya dosya adında kelime eşleşmesi
+      if (idx === -1) {
+        idx = images.findIndex((img) => {
+          const altNorm = norm(img.alt || '')
+          const fileBase = norm(String(img.filename || '').replace(/\.[^.]+$/, ''))
+          return hasWholeWord(altNorm, target) || hasWholeWord(fileBase, target)
+        })
+      }
+
+      // c) Ürün adı dışındaki alt metin veya dosya adında geçme durumu (Base64 url hariç)
+      if (idx === -1) {
+        idx = images.findIndex((img) => {
+          const altNorm = norm(img.alt || '')
+          const altClean = normProduct ? altNorm.replace(normProduct, '').trim() : altNorm
+          const fileBase = norm(String(img.filename || '').replace(/\.[^.]+$/, ''))
+          return altClean.includes(target) || fileBase.includes(target)
+        })
+      }
+
+      if (idx !== -1) {
+        result[color] = idx
+        usedImgIndices.add(idx)
       }
     }
-    return -1
-  }
+
+    // 2. Eşleşmeyen renk (örneğin 4. renk) varsa, diğer renklere atanmamış boş görseli ata
+    colors.forEach((color, colorIdx) => {
+      if (result[color] !== undefined) return
+
+      if (images[colorIdx] && !usedImgIndices.has(colorIdx)) {
+        result[color] = colorIdx
+        usedImgIndices.add(colorIdx)
+        return
+      }
+
+      const firstUnused = images.findIndex((_, i) => !usedImgIndices.has(i))
+      if (firstUnused !== -1) {
+        result[color] = firstUnused
+        usedImgIndices.add(firstUnused)
+      } else if (images[colorIdx]) {
+        result[color] = colorIdx
+      }
+    })
+
+    return result
+  }, [axes, colorAxisKey, images, productName])
 
   const selectImage = (idx: number) => {
     setActiveImgIdx(idx)
     if (!colorAxisKey) return
 
-    const img = images[idx]
-    const alt = String(img?.alt || '')
-    const suffix = alt.includes(' - ') ? alt.split(' - ').pop() || '' : ''
-    const fileBase = norm(String(img?.filename || '').replace(/\.[^.]+$/, ''))
+    const colors = axes[colorAxisKey] || []
+    const matchedColor =
+      colors.find((c) => colorToImageIdx[c] === idx) ?? colors[idx]
 
-    const color =
-      (suffix && axes[colorAxisKey].find((c) => norm(suffix) === norm(c.split(',')[0]))) ||
-      axes[colorAxisKey].find((c) => hasWholeWord(fileBase, norm(c.split(',')[0]))) ||
-      axes[colorAxisKey][idx]
-
-    if (color) {
+    if (matchedColor) {
       manualThumbClick.current = true
       setMsg(null)
-      setSelectedOpts((prev) => ({ ...prev, [colorAxisKey]: color }))
+      setSelectedOpts((prev) => ({ ...prev, [colorAxisKey]: matchedColor }))
     }
   }
 
@@ -168,10 +201,12 @@ export function AddToCart({
       return
     }
     if (colorAxisKey && selectedOpts[colorAxisKey]) {
-      const idx = findImageIndexForColor(selectedOpts[colorAxisKey])
-      if (idx !== -1) setActiveImgIdx(idx)
+      const idx = colorToImageIdx[selectedOpts[colorAxisKey]]
+      if (idx !== undefined && idx !== -1) {
+        setActiveImgIdx(idx)
+      }
     }
-  }, [selectedOpts, axes, images])
+  }, [selectedOpts, colorAxisKey, colorToImageIdx])
 
   const variantMatchesOption = (v: V, key: string, val: string) => {
     if (!v.options) return false
@@ -202,8 +237,10 @@ export function AddToCart({
     setMsg(null)
     setSelectedOpts((prev) => ({ ...prev, [key]: value }))
     if (norm(key) === 'renk' || norm(key) === 'color') {
-      const idx = findImageIndexForColor(value)
-      if (idx !== -1) setActiveImgIdx(idx)
+      const idx = colorToImageIdx[value]
+      if (idx !== undefined && idx !== -1) {
+        setActiveImgIdx(idx)
+      }
     }
   }
 
