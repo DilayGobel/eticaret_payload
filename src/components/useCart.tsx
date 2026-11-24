@@ -17,11 +17,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [qty, setQty] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [version, setVersion] = useState(0)
-  const pending = useRef<Record<string, number>>({})
+  const seq = useRef(0) // eski cevapların yenisini ezmesini engeller
 
   const refresh = useCallback(async () => {
+    const mine = ++seq.current
     try {
       const res = await api('/carts/summary')
+      if (mine !== seq.current) return // daha yeni bir istek başladı, bunu yok say
       const next: Record<string, number> = {}
       for (const i of res.items || []) next[i.variantId] = i.quantity
       setQty(next)
@@ -39,15 +41,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const change = useCallback(
     async (variantId: string, delta: number, selectedOptions?: Record<string, string>) => {
+      const id = String(variantId)
+      // İyimser güncelleme: UI anında değişsin
+      setQty((q) => ({ ...q, [id]: Math.max(0, (q[id] || 0) + delta) }))
       try {
-        const res = await addToCart(variantId, delta, selectedOptions)
-        const actualId = String(res.variantId || variantId)
-        setQty((q) => ({ ...q, [actualId]: res.quantity }))
-        setVersion((v) => v + 1)
-        await refresh()
+        const res = await addToCart(id, delta, selectedOptions)
+        seq.current++ // uçuştaki eski refresh cevaplarını geçersiz kıl
+        // Sunucunun gerçek değeriyle düzelt (stok sınırı vb.), ekstra GET yok
+        setQty((q) => ({ ...q, [String(res.variantId || id)]: res.quantity }))
+        setVersion((v) => v + 1) // sadece 1 kez
         return res
       } catch (e) {
-        await refresh()
+        await refresh() // hata olursa gerçek durumu geri yükle
         throw e
       }
     },
@@ -55,12 +60,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   )
 
   const count = useMemo(() => Object.values(qty).reduce((s, n) => s + n, 0), [qty])
-
-  return (
-    <Ctx.Provider value={{ qty, loading, count, version, change, refresh }}>
-      {children}
-    </Ctx.Provider>
+  const value = useMemo(
+    () => ({ qty, loading, count, version, change, refresh }),
+    [qty, loading, count, version, change, refresh],
   )
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
 export function useCart() {
@@ -78,14 +83,8 @@ export function useCartDetails() {
     let cancelled = false
     ;(async () => {
       try {
-        const cart = await api('/carts/summary')
-        if (!cart.cartId) {
-          if (!cancelled) setItems([])
-          return
-        }
-        const res = await api(
-          `/cart-items?where[cart][equals]=${cart.cartId}&depth=3&limit=100&sort=createdAt`,
-        )
+        // Erişim kuralı zaten sadece kendi sepetini döndürüyor: summary çağrısı gereksiz
+        const res = await api('/cart-items?depth=3&limit=100&sort=createdAt')
         if (!cancelled) setItems(res.docs || [])
       } finally {
         if (!cancelled) setLoading(false)
