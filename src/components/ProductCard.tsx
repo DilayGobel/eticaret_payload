@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { formatTRY } from '@/lib/money'
 import { HomeAddToCart } from '@/components/HomeAddToCart'
 import { ProductCardImage } from '@/components/ProductCardImage'
+import { QuickAddModal } from '@/components/QuickAddModal'
 
 export type CardVariant = {
   id: string
@@ -30,6 +31,16 @@ const colorOf = (v: CardVariant) => String(v.options?.renk ?? v.options?.color ?
 
 const pickRep = (list: CardVariant[]) =>
   [...list].sort((a, b) => Number(b.stock > 0) - Number(a.stock > 0) || a.price - b.price)[0]
+
+const hasMultiValueOption = (v?: CardVariant) =>
+  Boolean(
+    v?.options &&
+      Object.values(v.options).some((raw) =>
+        Array.isArray(raw)
+          ? raw.length > 1
+          : typeof raw === 'string' && raw.split(',').map((s) => s.trim()).filter(Boolean).length > 1,
+      ),
+  )
 
 export function ProductCard({
   slug, name, images, variants,
@@ -84,6 +95,7 @@ export function ProductCard({
 
   const [selColor, setSelColor] = useState(initialColor)
   const [imgIdx, setImgIdx] = useState(() => colorToImgIdx[initialColor] ?? 0)
+  const [modalOpen, setModalOpen] = useState(false)
 
   if (!groups.length) {
     return (
@@ -103,6 +115,9 @@ export function ProductCard({
   const hasRange = Math.max(...prices) !== minPrice
   const rep = group.rep
 
+  const needsOptionModal = group.list.length > 1 || hasMultiValueOption(rep)
+  const hasAnyStock = group.list.some((v) => v.stock > 0)
+
   const pickColor = (color: string, gi: number) => (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -110,66 +125,92 @@ export function ProductCard({
     setImgIdx(colorToImgIdx[color] ?? (images[gi] ? gi : 0))
   }
 
+  const openOptionModal = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setModalOpen(true)
+  }
+
   const hasColors = groups.length > 1 || groups[0].color !== ''
   const img = images[imgIdx] ?? images[0]
 
   return (
-    <Link href={`/products/${slug}`} prefetch={false} className="card">
-      {hasColors && groups.length > 1 ? (
-        <div style={{ background: '#fff', borderBottom: '1px solid #f1f5f9' }}>
-          {img ? (
-            <img
-              src={img.url}
-              alt={img.alt || name}
-              style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'contain', padding: 12, display: 'block' }}
-            />
-          ) : (
-            <div className="ph" />
-          )}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 7, padding: '2px 0 10px' }}>
-            {groups.map((g, gi) => {
-              const selected = g.color === group.color
-              const inStock = g.list.some((v) => v.stock > 0)
-              return (
-                <button
-                  key={g.color}
-                  type="button"
-                  title={g.color}
-                  onClick={pickColor(g.color, gi)}
-                  style={{
-                    width: 14, height: 14, borderRadius: '50%', padding: 0,
-                    background: COLOR_HEX[norm(g.color)] ?? '#cbd5e1',
-                    border: selected ? '2px solid #e8590c' : '1px solid #cbd5e1',
-                    boxShadow: selected ? '0 0 0 2px rgba(232,89,12,0.2)' : 'none',
-                    opacity: inStock ? 1 : 0.35,
-                    cursor: 'pointer',
-                  }}
-                />
-              )
-            })}
+    <>
+      <Link href={`/products/${slug}`} prefetch={false} className="card">
+        {hasColors && groups.length > 1 ? (
+          <div style={{ background: '#fff', borderBottom: '1px solid #f1f5f9' }}>
+            {img ? (
+              <img
+                src={img.url}
+                alt={img.alt || name}
+                style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'contain', padding: 12, display: 'block' }}
+              />
+            ) : (
+              <div className="ph" />
+            )}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 7, padding: '2px 0 10px' }}>
+              {groups.map((g, gi) => {
+                const selected = g.color === group.color
+                const inStock = g.list.some((v) => v.stock > 0)
+                return (
+                  <button
+                    key={g.color}
+                    type="button"
+                    title={g.color}
+                    onClick={pickColor(g.color, gi)}
+                    style={{
+                      width: 14, height: 14, borderRadius: '50%', padding: 0,
+                      background: COLOR_HEX[norm(g.color)] ?? '#cbd5e1',
+                      border: selected ? '2px solid #e8590c' : '1px solid #cbd5e1',
+                      boxShadow: selected ? '0 0 0 2px rgba(232,89,12,0.2)' : 'none',
+                      opacity: inStock ? 1 : 0.35,
+                      cursor: 'pointer',
+                    }}
+                  />
+                )
+              })}
+            </div>
           </div>
-        </div>
-      ) : (
-        <ProductCardImage images={images} productName={name} />
-      )}
+        ) : (
+          <ProductCardImage images={images} productName={name} />
+        )}
 
-      <div className="pad">
-        <div style={{ fontWeight: 500, marginBottom: 4 }}>{name}</div>
-        {hasColors && <div className="muted" style={{ fontSize: 12 }}>{group.color}</div>}
-        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-          <div className="price" style={{ margin: 0 }}>
-            {hasRange && <span className="muted" style={{ fontSize: 12 }}>’den </span>}
-            {formatTRY(minPrice)}
+        <div className="pad">
+          <div style={{ fontWeight: 500, marginBottom: 4 }}>{name}</div>
+          {hasColors && <div className="muted" style={{ fontSize: 12 }}>{group.color}</div>}
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+            <div className="price" style={{ margin: 0 }}>
+              {hasRange && <span className="muted" style={{ fontSize: 12 }}>’den </span>}
+              {formatTRY(minPrice)}
+            </div>
+            {!hasAnyStock ? (
+              <span className="muted" style={{ fontSize: 13 }}>Tükendi</span>
+            ) : needsOptionModal ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={openOptionModal}
+                style={{ padding: '6px 12px', fontSize: 13, cursor: 'pointer' }}
+              >
+                + Sepete Ekle
+              </button>
+            ) : (
+              <HomeAddToCart key={rep.id} variantId={rep.id} stock={rep.stock} />
+            )}
           </div>
-          {group.list.length === 1 && rep.stock > 0 ? (
-            <HomeAddToCart key={rep.id} variantId={rep.id} stock={rep.stock} />
-          ) : group.list.length > 1 ? (
-            <span className="muted" style={{ fontSize: 12 }}>Seçenekler →</span>
-          ) : (
-            <span className="muted" style={{ fontSize: 13 }}>Tükendi</span>
-          )}
         </div>
-      </div>
-    </Link>
+      </Link>
+
+      {modalOpen && (
+        <QuickAddModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          productName={name}
+          images={images}
+          variants={variants}
+          initialColor={group.color}
+        />
+      )}
+    </>
   )
 }
