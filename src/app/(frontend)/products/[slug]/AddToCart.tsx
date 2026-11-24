@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { formatTRY } from '@/lib/money'
 import { useCart } from '@/components/useCart'
 
@@ -68,8 +68,8 @@ export function AddToCart({
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [activeImgIdx, setActiveImgIdx] = useState(0)
-  // Dinamik oluşturulan alt varyantların ID'lerini kombinasyon anahtarına göre hafızada tut
   const [resolvedIds, setResolvedIds] = useState<Record<string, string>>({})
+  const manualThumbClick = useRef(false)
 
   const axes = useMemo(() => {
     const map: Record<string, string[]> = {}
@@ -93,21 +93,57 @@ export function AddToCart({
   const [selectedOpts, setSelectedOpts] = useState<Record<string, string>>({})
   const colorAxisKey = axisKeys.find((k) => norm(k) === 'renk' || norm(k) === 'color')
 
+  const findImageIndexForColor = (colorValue: string) => {
+    if (!images.length) return -1
+    const target = norm(colorValue.split(',')[0])
+
+    // 1. Önce görselin alt metninin son kısmında (örn: "Ürün - Pembe") tam eşleşme ara
+    const exactSuffixIdx = images.findIndex((img) => {
+      const alt = String(img.alt || '')
+      const suffix = alt.includes(' - ') ? alt.split(' - ').pop() || '' : alt
+      return norm(suffix) === target
+    })
+    if (exactSuffixIdx !== -1) return exactSuffixIdx
+
+    // 2. Görselin alt metni veya dosya adında renk adını ara (Base64 url içinde arama yapma!)
+    const matchByTextIdx = images.findIndex(
+      (img) =>
+        (img.alt && norm(img.alt).includes(target)) ||
+        (img.filename && norm(img.filename).includes(target)),
+    )
+    if (matchByTextIdx !== -1) return matchByTextIdx
+
+    // 3. Eşleşme yoksa renk sırasına göre görsel seç
+    if (colorAxisKey) {
+      const colorIdx = axes[colorAxisKey].indexOf(colorValue)
+      if (colorIdx !== -1 && images[colorIdx]) {
+        return colorIdx
+      }
+    }
+    return -1
+  }
+
   const selectImage = (idx: number) => {
     setActiveImgIdx(idx)
     if (!colorAxisKey) return
 
     const img = images[idx]
-    const text = norm(`${img?.alt || ''} ${img?.filename || ''}`)
-    // Önce görselin alt/dosya adında renk adı ara, yoksa görsel sırasına göre renk al
+    const alt = String(img?.alt || '')
+    const suffix = alt.includes(' - ') ? alt.split(' - ').pop() || '' : alt
+    const text = norm(`${alt} ${img?.filename || ''}`)
+
     const color =
-      axes[colorAxisKey].find((c) => text.includes(norm(c))) ?? axes[colorAxisKey][idx]
+      axes[colorAxisKey].find((c) => norm(suffix) === norm(c.split(',')[0])) ??
+      axes[colorAxisKey].find((c) => text.includes(norm(c.split(',')[0]))) ??
+      axes[colorAxisKey][idx]
 
     if (color) {
+      manualThumbClick.current = true
       setMsg(null)
       setSelectedOpts((prev) => ({ ...prev, [colorAxisKey]: color }))
     }
   }
+
   useEffect(() => {
     setSelectedOpts((prev) => {
       const next = { ...prev }
@@ -120,48 +156,27 @@ export function AddToCart({
     })
   }, [axes])
 
-  const switchImageForColor = (colorValue: string) => {
-    if (!images.length) return
-    const target = norm(colorValue)
-
-    const matchByTextIdx = images.findIndex(
-      (img) =>
-        (img.alt && norm(img.alt).includes(target)) ||
-        (img.filename && norm(img.filename).includes(target)) ||
-        (img.url && norm(img.url).includes(target))
-    )
-    if (matchByTextIdx !== -1) {
-      setActiveImgIdx(matchByTextIdx)
+  useEffect(() => {
+    if (manualThumbClick.current) {
+      manualThumbClick.current = false
       return
     }
-
-    const colorAxisKey = Object.keys(axes).find((k) => norm(k) === 'renk' || norm(k) === 'color')
-    if (colorAxisKey) {
-      const colorIdx = axes[colorAxisKey].indexOf(colorValue)
-      if (colorIdx !== -1 && images[colorIdx]) {
-        setActiveImgIdx(colorIdx)
-      }
-    }
-  }
-
-  useEffect(() => {
-    const colorAxisKey = Object.keys(axes).find((k) => norm(k) === 'renk' || norm(k) === 'color')
     if (colorAxisKey && selectedOpts[colorAxisKey]) {
-      switchImageForColor(selectedOpts[colorAxisKey])
+      const idx = findImageIndexForColor(selectedOpts[colorAxisKey])
+      if (idx !== -1) setActiveImgIdx(idx)
     }
-  }, [selectedOpts, axes])
+  }, [selectedOpts, axes, images])
 
   const variantMatchesOption = (v: V, key: string, val: string) => {
     if (!v.options) return false
     return parseValues(v.options[key]).includes(val)
   }
 
-  // Önce birebir tekil eşleşen varyantı ara, yoksa kapsayan ana varyantı al
   const exactVariant = variants.find(
     (v) =>
       v.options &&
       axisKeys.length > 0 &&
-      axisKeys.every((k) => String(v.options?.[k] || '').trim() === selectedOpts[k])
+      axisKeys.every((k) => String(v.options?.[k] || '').trim() === selectedOpts[k]),
   )
 
   const sel =
@@ -169,10 +184,10 @@ export function AddToCart({
     (axisKeys.length === 0
       ? firstInStock
       : variants.find(
-        (v) =>
-          v.options &&
-          axisKeys.every((k) => variantMatchesOption(v, k, selectedOpts[k]))
-      ) ?? firstInStock)
+          (v) =>
+            v.options &&
+            axisKeys.every((k) => variantMatchesOption(v, k, selectedOpts[k])),
+        ) ?? firstInStock)
 
   const comboKey = JSON.stringify(selectedOpts)
   const effectiveVariantId = exactVariant?.id ?? resolvedIds[comboKey] ?? sel?.id
@@ -181,7 +196,8 @@ export function AddToCart({
     setMsg(null)
     setSelectedOpts((prev) => ({ ...prev, [key]: value }))
     if (norm(key) === 'renk' || norm(key) === 'color') {
-      switchImageForColor(value)
+      const idx = findImageIndexForColor(value)
+      if (idx !== -1) setActiveImgIdx(idx)
     }
   }
 
@@ -190,11 +206,10 @@ export function AddToCart({
       (v) =>
         v.stock > 0 &&
         variantMatchesOption(v, key, value) &&
-        axisKeys.every((k) => k === key || !selectedOpts[k] || variantMatchesOption(v, k, selectedOpts[k]))
+        axisKeys.every((k) => k === key || !selectedOpts[k] || variantMatchesOption(v, k, selectedOpts[k])),
     )
   }
 
-  // Sadece birebir seçili kombinasyonun sepetteki adedini göster
   const inCartQty =
     exactVariant || resolvedIds[comboKey] || axisKeys.length === 0
       ? qty[String(effectiveVariantId)] || 0
@@ -253,7 +268,8 @@ export function AddToCart({
                   key={img.id || idx}
                   src={img.url}
                   alt={img.alt || ''}
-                  onClick={() => selectImage(idx)} style={{
+                  onClick={() => selectImage(idx)}
+                  style={{
                     width: 72,
                     height: 72,
                     objectFit: 'contain',

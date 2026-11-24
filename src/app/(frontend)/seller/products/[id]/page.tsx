@@ -1,9 +1,21 @@
-// src/app/(frontend)/seller/products/[id]/page.tsx
 'use client'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { api, uploadMedia } from '@/lib/api'
 import { formatTRY } from '@/lib/money'
+
+const SEP = '|||'
+
+const norm = (s: string) =>
+  s
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i')
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .trim()
 
 const code = (s: string) =>
   s
@@ -16,21 +28,30 @@ const code = (s: string) =>
     .replace(/Ç/g, 'C')
     .replace(/[^A-Z0-9]/g, '')
 
+const getCleanAlt = (alt?: string) => String(alt || '').split(SEP)[0]
+
+const buildAltWithColor = (existingAlt: string | undefined, productName: string, color: string) => {
+  const raw = String(existingAlt || '')
+  const b64Part = raw.includes(SEP) ? SEP + raw.split(SEP).slice(1).join(SEP) : ''
+  const label = color ? `${productName} - ${color}` : productName
+  return `${label}${b64Part}`
+}
+
 export default function EditProduct() {
   const { id } = useParams<{ id: string }>()
   const [product, setProduct] = useState<any>(null)
   const [categories, setCategories] = useState<any[]>([])
   const [variants, setVariants] = useState<any[]>([])
   const [msg, setMsg] = useState('')
+  const [uploadColor, setUploadColor] = useState('')
 
-  // Çoklu renk ve özellik destekli varyant formu
   const [nv, setNv] = useState({
     skuPrefix: '',
     price: '',
     stock: '',
-    colors: '', // Örn: "Siyah, Beyaz, Kırmızı"
-    attrName: 'beden', // Örn: "beden", "switch", "baglanti"
-    attrValues: '', // Örn: "S, M, L" veya "Red, Blue"
+    colors: '',
+    attrName: 'beden',
+    attrValues: '',
   })
   const [stockIn, setStockIn] = useState<Record<string, string>>({})
 
@@ -62,6 +83,26 @@ export default function EditProduct() {
 
   if (!product) return <p className="muted">Yükleniyor…</p>
 
+  const variantColors = Array.from(
+    new Set(
+      variants
+        .map((v) => String(v.options?.renk ?? v.options?.color ?? '').split(',')[0].trim())
+        .filter(Boolean),
+    ),
+  )
+
+  const getAssignedColor = (img: any) => {
+    const clean = getCleanAlt(img.alt)
+    const suffix = clean.startsWith(`${product.name} - `)
+      ? clean.slice(`${product.name} - `.length).trim()
+      : clean
+    return (
+      variantColors.find((c) => norm(suffix) === norm(c)) ??
+      variantColors.find((c) => norm(clean).includes(norm(c))) ??
+      ''
+    )
+  }
+
   const saveProduct = () =>
     run(() =>
       api(`/products/${id}`, {
@@ -77,13 +118,23 @@ export default function EditProduct() {
 
   const addImage = (file: File) =>
     run(async () => {
-      const media = await uploadMedia(file, product.name)
+      const altText = uploadColor ? `${product.name} - ${uploadColor}` : product.name
+      const media = await uploadMedia(file, altText)
       const ids = (product.images || []).map((i: any) => (typeof i === 'object' ? i.id : i))
       await api(`/products/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ images: [...ids, media.id] }),
       })
     }, 'Görsel eklendi.')
+
+  const assignImageColor = (img: any, color: string) =>
+    run(async () => {
+      const nextAlt = buildAltWithColor(img.alt, product.name, color)
+      await api(`/media/${img.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ alt: nextAlt }),
+      })
+    }, 'Görsel rengi güncellendi.')
 
   const removeImage = (imgId: string) =>
     run(() => {
@@ -96,11 +147,10 @@ export default function EditProduct() {
       })
     })
 
-  // Birden fazla rengi ve özelliği tek seferde kombinasyonlayıp varyant olarak ekler
   const addVariant = (e: React.FormEvent) => {
     e.preventDefault()
     run(async () => {
-      const price = Math.round(Number(nv.price.replace(',', '.')) * 100) // TL -> kuruş
+      const price = Math.round(Number(nv.price.replace(',', '.')) * 100)
       const initial = parseInt(nv.stock, 10)
 
       const colorList = nv.colors
@@ -113,7 +163,6 @@ export default function EditProduct() {
         .filter(Boolean)
       const extraKey = nv.attrName.trim().toLowerCase() || 'secenek'
 
-      // Kombinasyonları oluştur
       let combos: Record<string, string>[] = [{}]
       if (colorList.length > 0) {
         combos = combos.flatMap((c) => colorList.map((col) => ({ ...c, renk: col })))
@@ -236,34 +285,74 @@ export default function EditProduct() {
       <div className="panel stack">
         <h3 style={{ margin: 0 }}>Görseller</h3>
         <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
-          {images.map((img: any) => (
-            <div key={img.id} style={{ position: 'relative' }}>
-              <img
-                src={img.url}
-                alt={img.alt || ''}
-                style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8 }}
-              />
-              <button
-                type="button"
-                onClick={() => removeImage(img.id)}
-                style={{
-                  position: 'absolute',
-                  top: 4,
-                  right: 4,
-                  padding: '2px 6px',
-                  fontSize: 12,
-                }}
-              >
-                Sil
-              </button>
-            </div>
-          ))}
+          {images.map((img: any) => {
+            const rawAlt = String(img.alt || '')
+            const embeddedB64 = rawAlt.includes(SEP) ? rawAlt.split(SEP)[1] : ''
+            const src = embeddedB64 || img.url
+
+            return (
+              <div key={img.id} className="stack" style={{ gap: 6, width: 110 }}>
+                <div style={{ position: 'relative' }}>
+                  <img
+                    src={src}
+                    alt={getCleanAlt(img.alt)}
+                    style={{ width: 110, height: 110, objectFit: 'cover', borderRadius: 8, background: '#fff' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(img.id)}
+                    style={{
+                      position: 'absolute',
+                      top: 4,
+                      right: 4,
+                      padding: '2px 6px',
+                      fontSize: 12,
+                    }}
+                  >
+                    Sil
+                  </button>
+                </div>
+
+                {variantColors.length > 0 && (
+                  <select
+                    value={getAssignedColor(img)}
+                    onChange={(e) => assignImageColor(img, e.target.value)}
+                    style={{ fontSize: 12, padding: '4px 6px' }}
+                  >
+                    <option value="">Genel Görsel</option>
+                    {variantColors.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )
+          })}
         </div>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={(e) => e.target.files?.[0] && addImage(e.target.files[0])}
-        />
+
+        <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          {variantColors.length > 0 && (
+            <select
+              value={uploadColor}
+              onChange={(e) => setUploadColor(e.target.value)}
+              style={{ maxWidth: 180 }}
+            >
+              <option value="">Renk Seç (Opsiyonel)</option>
+              {variantColors.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          )}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => e.target.files?.[0] && addImage(e.target.files[0])}
+          />
+        </div>
       </div>
 
       {/* Varyantlar */}
