@@ -17,8 +17,8 @@ export type CardImg = { id: string; url: string; alt?: string; filename?: string
 
 const COLOR_HEX: Record<string, string> = {
   siyah: '#1e293b', beyaz: '#f8fafc', pembe: '#f472b6', kirmizi: '#ef4444',
-  mavi: '#3b82f6', yesil: '#22c55e', sari: '#eab308', mor: '#a855f7',
-  gri: '#94a3b8', turuncu: '#f97316',
+  mavi: '#3b82f6', yesil: '#22c55e', yesilkrem: '#86efac', sari: '#eab308',
+  mor: '#a855f7', gri: '#94a3b8', turuncu: '#f97316', krem: '#fef3c7',
 }
 
 const norm = (s: string) =>
@@ -48,13 +48,42 @@ export function ProductCard({
     return [...map.entries()].map(([color, list]) => ({ color, list, rep: pickRep(list) }))
   }, [variants])
 
+  const colorToImgIdx = useMemo(() => {
+    const res: Record<string, number> = {}
+    const used = new Set<number>()
+    const sorted = [...groups]
+      .filter((g) => g.color)
+      .sort((a, b) => norm(b.color).length - norm(a.color).length)
+
+    for (const g of sorted) {
+      const t = norm(g.color)
+      const idx = images.findIndex((img, i) => {
+        if (used.has(i)) return false
+        const alt = String(img.alt || '')
+        const suffix = alt.includes(' - ') ? norm(alt.split(' - ').pop() || '') : ''
+        return suffix === t || norm(alt).includes(t) || norm(img.filename || '').includes(t)
+      })
+      if (idx !== -1) {
+        res[g.color] = idx
+        used.add(idx)
+      }
+    }
+
+    groups.forEach((g, gi) => {
+      if (res[g.color] === undefined) {
+        res[g.color] = images[gi] && !used.has(gi) ? gi : 0
+      }
+    })
+    return res
+  }, [groups, images])
+
   const initialColor = useMemo(() => {
     if (!variants.length) return ''
     return colorOf(pickRep(variants))
   }, [variants])
 
   const [selColor, setSelColor] = useState(initialColor)
-  const [imgIdx, setImgIdx] = useState(0)
+  const [imgIdx, setImgIdx] = useState(() => colorToImgIdx[initialColor] ?? 0)
 
   if (!groups.length) {
     return (
@@ -74,20 +103,11 @@ export function ProductCard({
   const hasRange = Math.max(...prices) !== minPrice
   const rep = group.rep
 
-  const imageIndexFor = (color: string, groupIdx: number) => {
-    const t = norm(color)
-    const byText = images.findIndex(
-      (i) => norm(i.alt || '').includes(t) || norm(i.filename || '').includes(t),
-    )
-    if (byText !== -1) return byText
-    return images[groupIdx] ? groupIdx : 0
-  }
-
   const pickColor = (color: string, gi: number) => (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setSelColor(color)
-    setImgIdx(imageIndexFor(color, gi))
+    setImgIdx(colorToImgIdx[color] ?? (images[gi] ? gi : 0))
   }
 
   const hasColors = groups.length > 1 || groups[0].color !== ''

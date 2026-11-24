@@ -99,7 +99,7 @@ export function AddToCart({
   const [selectedOpts, setSelectedOpts] = useState<Record<string, string>>({})
   const colorAxisKey = axisKeys.find((k) => norm(k) === 'renk' || norm(k) === 'color')
 
-  // Her rengi kendi görseline kesin olarak eşleştir (diğer renklerin görselini ezmeden)
+  // Bileşik renklerin (örn. YeşilKrem vs Yeşil) çakışmaması için uzun isimlerden başla ve kullanılan görseli kilitle
   const colorToImageIdx = useMemo(() => {
     const result: Record<string, number> = {}
     if (!colorAxisKey || !images.length) return result
@@ -108,45 +108,63 @@ export function AddToCart({
     const normProduct = norm(productName || '')
     const usedImgIndices = new Set<number>()
 
-    // 1. Önce alt metni veya dosya adıyla eşleşen renkleri bağla
-    for (const color of colors) {
+    const colorsBySpecificity = [...colors].sort(
+      (a, b) => norm(b.split(',')[0]).length - norm(a.split(',')[0]).length,
+    )
+
+    // 1a. Tam eşleşme ("Yeşil" veya "Ürün Adı - Yeşil")
+    for (const color of colorsBySpecificity) {
       const target = norm(color.split(',')[0])
       if (!target) continue
-
-      // a) Tam eşleşme ("Siyah" veya "Ürün Adı - Siyah")
-      let idx = images.findIndex((img) => {
+      const idx = images.findIndex((img, i) => {
+        if (usedImgIndices.has(i)) return false
         const alt = String(img.alt || '')
         const altNorm = norm(alt)
         const suffixNorm = alt.includes(' - ') ? norm(alt.split(' - ').pop() || '') : ''
         return altNorm === target || suffixNorm === target
       })
-
-      // b) Alt metin veya dosya adında kelime eşleşmesi
-      if (idx === -1) {
-        idx = images.findIndex((img) => {
-          const altNorm = norm(img.alt || '')
-          const fileBase = norm(String(img.filename || '').replace(/\.[^.]+$/, ''))
-          return hasWholeWord(altNorm, target) || hasWholeWord(fileBase, target)
-        })
-      }
-
-      // c) Ürün adı dışındaki alt metin veya dosya adında geçme durumu (Base64 url hariç)
-      if (idx === -1) {
-        idx = images.findIndex((img) => {
-          const altNorm = norm(img.alt || '')
-          const altClean = normProduct ? altNorm.replace(normProduct, '').trim() : altNorm
-          const fileBase = norm(String(img.filename || '').replace(/\.[^.]+$/, ''))
-          return altClean.includes(target) || fileBase.includes(target)
-        })
-      }
-
       if (idx !== -1) {
         result[color] = idx
         usedImgIndices.add(idx)
       }
     }
 
-    // 2. Eşleşmeyen renk (örneğin 4. renk) varsa, diğer renklere atanmamış boş görseli ata
+    // 1b. Kelime bazlı eşleşme
+    for (const color of colorsBySpecificity) {
+      if (result[color] !== undefined) continue
+      const target = norm(color.split(',')[0])
+      if (!target) continue
+      const idx = images.findIndex((img, i) => {
+        if (usedImgIndices.has(i)) return false
+        const altNorm = norm(img.alt || '')
+        const fileBase = norm(String(img.filename || '').replace(/\.[^.]+$/, ''))
+        return hasWholeWord(altNorm, target) || hasWholeWord(fileBase, target)
+      })
+      if (idx !== -1) {
+        result[color] = idx
+        usedImgIndices.add(idx)
+      }
+    }
+
+    // 1c. Alt-metin / dosya adı içinde geçme (uzun isimler öncelikli olduğu için YeşilKrem önce eşleşir)
+    for (const color of colorsBySpecificity) {
+      if (result[color] !== undefined) continue
+      const target = norm(color.split(',')[0])
+      if (!target) continue
+      const idx = images.findIndex((img, i) => {
+        if (usedImgIndices.has(i)) return false
+        const altNorm = norm(img.alt || '')
+        const altClean = normProduct ? altNorm.replace(normProduct, '').trim() : altNorm
+        const fileBase = norm(String(img.filename || '').replace(/\.[^.]+$/, ''))
+        return altClean.includes(target) || fileBase.includes(target)
+      })
+      if (idx !== -1) {
+        result[color] = idx
+        usedImgIndices.add(idx)
+      }
+    }
+
+    // 2. Eşleşmeyen renk kalırsa boşta kalan ilk görseli ata
     colors.forEach((color, colorIdx) => {
       if (result[color] !== undefined) return
 
