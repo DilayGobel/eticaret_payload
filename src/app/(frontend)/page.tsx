@@ -15,27 +15,28 @@ export default async function HomePage({
   const payload = await getPayload({ config })
   const pageNo = Math.max(1, Number(page) || 1)
 
-  const categories = await payload.find({
-    collection: 'categories',
-    where: { isActive: { equals: true } },
-    pagination: false,
-    depth: 0,
-    overrideAccess: false,
-  })
-
   const and: any[] = [{ status: { equals: 'published' } }]
   if (category) and.push({ category: { equals: category } })
   if (q) and.push({ name: { like: q } })
 
-  const products = await payload.find({
-    collection: 'products',
-    where: { and },
-    page: pageNo,
-    limit: PAGE_SIZE,
-    sort: '-createdAt',
-    depth: 1,
-    overrideAccess: false,
-  })
+  const [categories, products] = await Promise.all([
+    payload.find({
+      collection: 'categories',
+      where: { isActive: { equals: true } },
+      pagination: false,
+      depth: 0,
+      overrideAccess: false,
+    }),
+    payload.find({
+      collection: 'products',
+      where: { and },
+      page: pageNo,
+      limit: PAGE_SIZE,
+      sort: '-createdAt',
+      depth: 1,
+      overrideAccess: false,
+    }),
+  ])
 
   // Varyantları ve en ucuz fiyat / stok bilgisini eşleştir
   const variantsByProduct = new Map<string, CardVariant[]>()

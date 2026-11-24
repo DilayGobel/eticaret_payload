@@ -13,14 +13,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   const res = await payload.find({
     collection: 'products',
-    where: {
-      or: [
-        { slug: { equals: decodedSlug } },
-        { slug: { equals: slug } },
-      ],
-    },
+    where:
+      decodedSlug === slug
+        ? { slug: { equals: slug } }
+        : {
+            or: [
+              { slug: { equals: decodedSlug } },
+              { slug: { equals: slug } },
+            ],
+          },
     limit: 1,
-    depth: 2,
+    depth: 1,
     overrideAccess: true,
   })
   const product = res.docs[0]
