@@ -28,7 +28,6 @@ const norm = (s: string) =>
 
 const colorOf = (v: CardVariant) => String(v.options?.renk ?? v.options?.color ?? '').trim()
 
-// Stoktakiler öncelikli, sonra en ucuz
 const pickRep = (list: CardVariant[]) =>
   [...list].sort((a, b) => Number(b.stock > 0) - Number(a.stock > 0) || a.price - b.price)[0]
 
@@ -40,7 +39,6 @@ export function ProductCard({
   images: CardImg[]
   variants: CardVariant[]
 }) {
-  // Renge göre grupla (renk yoksa tek grup: '')
   const groups = useMemo(() => {
     const map = new Map<string, CardVariant[]>()
     for (const v of variants) {
@@ -60,7 +58,7 @@ export function ProductCard({
 
   if (!groups.length) {
     return (
-      <Link href={`/products/${slug}`} className="card">
+      <Link href={`/products/${slug}`} prefetch={false} className="card">
         <ProductCardImage images={images} productName={name} />
         <div className="pad">
           <div style={{ fontWeight: 500, marginBottom: 4 }}>{name}</div>
@@ -96,8 +94,7 @@ export function ProductCard({
   const img = images[imgIdx] ?? images[0]
 
   return (
-    <Link href={`/products/${slug}`} className="card">
-      {/* Görsel: renk varsa renk noktaları, yoksa eski görsel noktaları */}
+    <Link href={`/products/${slug}`} prefetch={false} className="card">
       {hasColors && groups.length > 1 ? (
         <div style={{ background: '#fff', borderBottom: '1px solid #f1f5f9' }}>
           {img ? (

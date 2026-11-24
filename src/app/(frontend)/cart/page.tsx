@@ -1,7 +1,6 @@
 ﻿'use client'
 import Link from 'next/link'
 import { useCart, useCartDetails } from '@/components/useCart'
-import { removeCartItem, updateCartItem } from '@/lib/api'
 import { formatTRY } from '@/lib/money'
 import { calcShipping, FREE_SHIPPING_THRESHOLD } from '@/utils/coupon'
 
@@ -41,9 +40,9 @@ function pickImageForVariant(images: any[], options?: Record<string, any> | null
 
 export default function CartPage() {
   const { items, loading, subtotal } = useCartDetails()
-  useCart()
+  const { qty, change } = useCart()
 
-  if (loading) return <p className="muted">Yükleniyor…</p>
+  if (loading && items.length === 0) return <p className="muted">Yükleniyor…</p>
   if (items.length === 0)
     return (
       <div className="panel stack">
@@ -62,6 +61,7 @@ export default function CartPage() {
         {items.map((i) => {
           const v = i.variant
           const p = v.product
+          const vid = String(v.id)
           const img = pickImageForVariant(p.images, v.options)
           const rawAlt = String(img?.alt || '')
           const [cleanAlt, embeddedB64] = rawAlt.includes(SEP)
@@ -69,7 +69,6 @@ export default function CartPage() {
             : [rawAlt, '']
           const imgSrc = embeddedB64 || img?.url
 
-          // Seçenekleri "Renk: Pembe / Switch: Red / Bağlantı: Kablosuz" şeklinde sadece seçili değerleriyle göster
           const optionText = v.options
             ? Object.entries(v.options)
                 .map(([k, val]) => `${k.charAt(0).toUpperCase() + k.slice(1)}: ${String(val).split(',')[0].trim()}`)
@@ -88,7 +87,7 @@ export default function CartPage() {
                 <div className="ph" />
               )}
               <div style={{ flex: 1 }}>
-                <Link href={`/products/${p.slug}`} style={{ fontWeight: 600 }}>
+                <Link href={`/products/${p.slug}`} prefetch={false} style={{ fontWeight: 600 }}>
                   {p.name}
                 </Link>
                 <div className="muted" style={{ marginTop: 4 }}>
@@ -104,14 +103,24 @@ export default function CartPage() {
                 max={v.stock}
                 value={i.quantity}
                 style={{ width: 70 }}
-                onChange={(e) =>
-                  updateCartItem(
-                    i.id,
-                    Math.max(1, Math.min(v.stock, Number(e.target.value) || 1)),
-                  )
-                }
+                onChange={(e) => {
+                  const next = Math.max(1, Math.min(v.stock, Number(e.target.value) || 1))
+                  const delta = next - i.quantity
+                  if (delta !== 0) {
+                    change(vid, delta).catch((err: any) => alert(err.message || 'Güncellenemedi'))
+                  }
+                }}
               />
-              <button className="secondary" onClick={() => removeCartItem(i.id)}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  const current = qty[vid] ?? i.quantity
+                  if (current > 0) {
+                    change(vid, -current).catch((err: any) => alert(err.message || 'Silinemedi'))
+                  }
+                }}
+              >
                 Sil
               </button>
             </div>

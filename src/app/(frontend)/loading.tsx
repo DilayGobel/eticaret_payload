@@ -1,7 +1,7 @@
-export default function Loading() {
+export default function ProductLoading() {
   return (
     <div style={{ padding: '48px 0', textAlign: 'center' }}>
-      <p className="muted">Yükleniyor...</p>
+      <p className="muted">Ürün yükleniyor...</p>
     </div>
   )
 }
