@@ -63,17 +63,18 @@ export function AddToCart({
   productName,
   sellerName,
   description,
+  initialColor,
 }: {
   variants: V[]
   images?: Img[]
   productName?: string
   sellerName?: string | null
   description?: string | null
+  initialColor?: string
 }) {
   const { qty, loading, change } = useCart()
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [activeImgIdx, setActiveImgIdx] = useState(0)
   const [resolvedIds, setResolvedIds] = useState<Record<string, string>>({})
   const manualThumbClick = useRef(false)
 
@@ -95,11 +96,17 @@ export function AddToCart({
 
   const axisKeys = Object.keys(axes)
   const firstInStock = variants.find((v) => v.stock > 0) ?? variants[0]
-
-  const [selectedOpts, setSelectedOpts] = useState<Record<string, string>>({})
   const colorAxisKey = axisKeys.find((k) => norm(k) === 'renk' || norm(k) === 'color')
 
-  // Bileşik renklerin (örn. YeşilKrem vs Yeşil) çakışmaması için uzun isimlerden başla ve kullanılan görseli kilitle
+  const matchedInitialColor = useMemo(() => {
+    if (!initialColor || !colorAxisKey || !axes[colorAxisKey]?.length) return undefined
+    const target = norm(initialColor)
+    return (
+      axes[colorAxisKey].find((c) => c === initialColor) ??
+      axes[colorAxisKey].find((c) => norm(c) === target)
+    )
+  }, [initialColor, colorAxisKey, axes])
+
   const colorToImageIdx = useMemo(() => {
     const result: Record<string, number> = {}
     if (!colorAxisKey || !images.length) return result
@@ -112,7 +119,6 @@ export function AddToCart({
       (a, b) => norm(b.split(',')[0]).length - norm(a.split(',')[0]).length,
     )
 
-    // 1a. Tam eşleşme ("Yeşil" veya "Ürün Adı - Yeşil")
     for (const color of colorsBySpecificity) {
       const target = norm(color.split(',')[0])
       if (!target) continue
@@ -129,7 +135,6 @@ export function AddToCart({
       }
     }
 
-    // 1b. Kelime bazlı eşleşme
     for (const color of colorsBySpecificity) {
       if (result[color] !== undefined) continue
       const target = norm(color.split(',')[0])
@@ -146,7 +151,6 @@ export function AddToCart({
       }
     }
 
-    // 1c. Alt-metin / dosya adı içinde geçme (uzun isimler öncelikli olduğu için YeşilKrem önce eşleşir)
     for (const color of colorsBySpecificity) {
       if (result[color] !== undefined) continue
       const target = norm(color.split(',')[0])
@@ -164,7 +168,6 @@ export function AddToCart({
       }
     }
 
-    // 2. Eşleşmeyen renk kalırsa boşta kalan ilk görseli ata
     colors.forEach((color, colorIdx) => {
       if (result[color] !== undefined) return
 
@@ -186,6 +189,25 @@ export function AddToCart({
     return result
   }, [axes, colorAxisKey, images, productName])
 
+  const [selectedOpts, setSelectedOpts] = useState<Record<string, string>>(() => {
+    const next: Record<string, string> = {}
+    for (const k of Object.keys(axes)) {
+      if (k === colorAxisKey && matchedInitialColor) {
+        next[k] = matchedInitialColor
+      } else {
+        next[k] = axes[k][0]
+      }
+    }
+    return next
+  })
+
+  const [activeImgIdx, setActiveImgIdx] = useState<number>(() => {
+    if (matchedInitialColor && colorToImageIdx[matchedInitialColor] !== undefined) {
+      return colorToImageIdx[matchedInitialColor]
+    }
+    return 0
+  })
+
   const selectImage = (idx: number) => {
     setActiveImgIdx(idx)
     if (!colorAxisKey) return
@@ -206,12 +228,12 @@ export function AddToCart({
       const next = { ...prev }
       for (const k of Object.keys(axes)) {
         if (!next[k] || !axes[k].includes(next[k])) {
-          next[k] = axes[k][0]
+          next[k] = k === colorAxisKey && matchedInitialColor ? matchedInitialColor : axes[k][0]
         }
       }
       return next
     })
-  }, [axes])
+  }, [axes, colorAxisKey, matchedInitialColor])
 
   useEffect(() => {
     if (manualThumbClick.current) {

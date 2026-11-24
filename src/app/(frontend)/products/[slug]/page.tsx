@@ -70,9 +70,16 @@ const getProductBySlug = unstable_cache(
   { revalidate: 20 },
 )
 
-export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
+export default async function ProductPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ renk?: string; color?: string }>
+}) {
+  const [{ slug }, { renk, color }] = await Promise.all([params, searchParams])
   const decodedSlug = decodeURIComponent(slug)
+  const initialColor = renk || color || undefined
 
   const data = await getProductBySlug(slug, decodedSlug)
   if (!data) notFound()
@@ -84,6 +91,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       description={data.description}
       images={data.images}
       variants={data.variants}
+      initialColor={initialColor}
     />
   )
 }

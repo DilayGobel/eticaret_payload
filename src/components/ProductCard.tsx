@@ -153,7 +153,6 @@ export function ProductCard({
     setImgIdx(colorToImgIdx[color] ?? (images[gi] ? gi : 0))
   }
 
-  // Görsel alanını mevcut renk adedine (groups.length) bölüp imlecin bulunduğu dikey dilimin rengini seçer
   const handleImageScrub = (e: React.MouseEvent<HTMLDivElement>) => {
     const sliceCount = groups.length
     if (sliceCount <= 1) return
@@ -179,10 +178,13 @@ export function ProductCard({
 
   const hasColors = groups.length > 1 || groups[0].color !== ''
   const img = images[imgIdx] ?? images[0]
+  const productHref = group.color
+    ? `/products/${slug}?renk=${encodeURIComponent(group.color)}`
+    : `/products/${slug}`
 
   return (
     <>
-      <Link href={`/products/${slug}`} prefetch={false} className="card">
+      <Link href={productHref} prefetch={false} className="card">
         {hasColors && groups.length > 1 ? (
           <div style={{ background: '#fff', borderBottom: '1px solid #f1f5f9' }}>
             <div
@@ -201,7 +203,6 @@ export function ProductCard({
                 <div className="ph" />
               )}
 
-              {/* Üzerine gelindiğinde kaç dikey dilime bölündüğünü gösteren ince gösterge çubukları */}
               <div
                 style={{
                   position: 'absolute',
