@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { formatTRY } from '@/lib/money'
-import { HomeAddToCart } from '@/components/HomeAddToCart'
 import { ProductCardImage } from '@/components/ProductCardImage'
 import { QuickAddModal } from '@/components/QuickAddModal'
 
@@ -31,16 +30,6 @@ const colorOf = (v: CardVariant) => String(v.options?.renk ?? v.options?.color ?
 
 const pickRep = (list: CardVariant[]) =>
   [...list].sort((a, b) => Number(b.stock > 0) - Number(a.stock > 0) || a.price - b.price)[0]
-
-const hasMultiValueOption = (v?: CardVariant) =>
-  Boolean(
-    v?.options &&
-      Object.values(v.options).some((raw) =>
-        Array.isArray(raw)
-          ? raw.length > 1
-          : typeof raw === 'string' && raw.split(',').map((s) => s.trim()).filter(Boolean).length > 1,
-      ),
-  )
 
 export function ProductCard({
   slug, name, images, variants,
@@ -113,10 +102,7 @@ export function ProductCard({
   const prices = group.list.map((v) => v.price)
   const minPrice = Math.min(...prices)
   const hasRange = Math.max(...prices) !== minPrice
-  const rep = group.rep
-
-  const needsOptionModal = group.list.length > 1 || hasMultiValueOption(rep)
-  const hasAnyStock = group.list.some((v) => v.stock > 0)
+  const hasAnyStock = variants.some((v) => v.stock > 0)
 
   const pickColor = (color: string, gi: number) => (e: React.MouseEvent) => {
     e.preventDefault()
@@ -185,7 +171,7 @@ export function ProductCard({
             </div>
             {!hasAnyStock ? (
               <span className="muted" style={{ fontSize: 13 }}>Tükendi</span>
-            ) : needsOptionModal ? (
+            ) : (
               <button
                 type="button"
                 className="btn"
@@ -194,8 +180,6 @@ export function ProductCard({
               >
                 + Sepete Ekle
               </button>
-            ) : (
-              <HomeAddToCart key={rep.id} variantId={rep.id} stock={rep.stock} />
             )}
           </div>
         </div>

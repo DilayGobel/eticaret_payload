@@ -367,49 +367,52 @@ export function QuickAddModal({
           </button>
         </div>
 
-        <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: 0 }} />
-
-        {/* Seçenek Grupları */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {axisKeys.map((key) => (
-            <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>
-                {KEY_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1)}:{' '}
-                <strong style={{ color: '#0f172a' }}>{selectedOpts[key]}</strong>
-              </span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {axes[key].map((val) => {
-                  const isSelected = selectedOpts[key] === val
-                  const available = isOptionAvailable(key, val)
-                  return (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => {
-                        setMsg(null)
-                        setAddCount(1)
-                        setSelectedOpts((prev) => ({ ...prev, [key]: val }))
-                      }}
-                      style={{
-                        padding: '7px 14px',
-                        borderRadius: 8,
-                        border: isSelected ? '2px solid #ea580c' : '1px solid #cbd5e1',
-                        background: isSelected ? '#fff7ed' : '#ffffff',
-                        color: isSelected ? '#ea580c' : '#1e293b',
-                        fontWeight: isSelected ? 600 : 400,
-                        fontSize: 13,
-                        cursor: available ? 'pointer' : 'not-allowed',
-                        opacity: available ? 1 : 0.45,
-                      }}
-                    >
-                      {val}
-                    </button>
-                  )
-                })}
-              </div>
+        {/* Seçenek Grupları (Varsa göster) */}
+        {axisKeys.length > 0 && (
+          <>
+            <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: 0 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {axisKeys.map((key) => (
+                <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>
+                    {KEY_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1)}:{' '}
+                    <strong style={{ color: '#0f172a' }}>{selectedOpts[key]}</strong>
+                  </span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {axes[key].map((val) => {
+                      const isSelected = selectedOpts[key] === val
+                      const available = isOptionAvailable(key, val)
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => {
+                            setMsg(null)
+                            setAddCount(1)
+                            setSelectedOpts((prev) => ({ ...prev, [key]: val }))
+                          }}
+                          style={{
+                            padding: '7px 14px',
+                            borderRadius: 8,
+                            border: isSelected ? '2px solid #ea580c' : '1px solid #cbd5e1',
+                            background: isSelected ? '#fff7ed' : '#ffffff',
+                            color: isSelected ? '#ea580c' : '#1e293b',
+                            fontWeight: isSelected ? 600 : 400,
+                            fontSize: 13,
+                            cursor: available ? 'pointer' : 'not-allowed',
+                            opacity: available ? 1 : 0.45,
+                          }}
+                        >
+                          {val}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
 
         {msg && (
           <div
