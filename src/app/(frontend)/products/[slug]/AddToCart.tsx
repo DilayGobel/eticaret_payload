@@ -51,6 +51,12 @@ const norm = (s: string) =>
     .replace(/ç/g, 'c')
     .trim()
 
+const hasWholeWord = (haystack: string, needle: string) => {
+  if (!haystack || !needle) return false
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(haystack)
+}
+
 export function AddToCart({
   variants,
   images = [],
@@ -97,23 +103,23 @@ export function AddToCart({
     if (!images.length) return -1
     const target = norm(colorValue.split(',')[0])
 
-    // 1. Önce görselin alt metninin son kısmında (örn: "Ürün - Pembe") tam eşleşme ara
+    // 1. Satıcı panelinden atanan renk etiketi ("Ürün Adı - Renk") ile tam eşleşme
     const exactSuffixIdx = images.findIndex((img) => {
       const alt = String(img.alt || '')
-      const suffix = alt.includes(' - ') ? alt.split(' - ').pop() || '' : alt
+      if (!alt.includes(' - ')) return false
+      const suffix = alt.split(' - ').pop() || ''
       return norm(suffix) === target
     })
     if (exactSuffixIdx !== -1) return exactSuffixIdx
 
-    // 2. Görselin alt metni veya dosya adında renk adını ara (Base64 url içinde arama yapma!)
-    const matchByTextIdx = images.findIndex(
-      (img) =>
-        (img.alt && norm(img.alt).includes(target)) ||
-        (img.filename && norm(img.filename).includes(target)),
-    )
-    if (matchByTextIdx !== -1) return matchByTextIdx
+    // 2. Dosya adında tam kelime eşleşmesi ("tasarım" içindeki "sarı" gibi yanlış eşleşmeleri önler)
+    const matchByFileIdx = images.findIndex((img) => {
+      const fileBase = norm(String(img.filename || '').replace(/\.[^.]+$/, ''))
+      return hasWholeWord(fileBase, target)
+    })
+    if (matchByFileIdx !== -1) return matchByFileIdx
 
-    // 3. Eşleşme yoksa renk sırasına göre görsel seç
+    // 3. Eşleşme yoksa rengin listedeki sırasına göre görseli seç (1. renk -> 1. görsel, 4. renk -> 4. görsel)
     if (colorAxisKey) {
       const colorIdx = axes[colorAxisKey].indexOf(colorValue)
       if (colorIdx !== -1 && images[colorIdx]) {
@@ -129,12 +135,12 @@ export function AddToCart({
 
     const img = images[idx]
     const alt = String(img?.alt || '')
-    const suffix = alt.includes(' - ') ? alt.split(' - ').pop() || '' : alt
-    const text = norm(`${alt} ${img?.filename || ''}`)
+    const suffix = alt.includes(' - ') ? alt.split(' - ').pop() || '' : ''
+    const fileBase = norm(String(img?.filename || '').replace(/\.[^.]+$/, ''))
 
     const color =
-      axes[colorAxisKey].find((c) => norm(suffix) === norm(c.split(',')[0])) ??
-      axes[colorAxisKey].find((c) => text.includes(norm(c.split(',')[0]))) ??
+      (suffix && axes[colorAxisKey].find((c) => norm(suffix) === norm(c.split(',')[0]))) ||
+      axes[colorAxisKey].find((c) => hasWholeWord(fileBase, norm(c.split(',')[0]))) ||
       axes[colorAxisKey][idx]
 
     if (color) {

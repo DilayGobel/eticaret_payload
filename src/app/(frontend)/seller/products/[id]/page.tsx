@@ -1,3 +1,4 @@
+// src/app/(frontend)/seller/products/[id]/page.tsx
 'use client'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
@@ -45,13 +46,14 @@ export default function EditProduct() {
   const [msg, setMsg] = useState('')
   const [uploadColor, setUploadColor] = useState('')
 
+  // Çoklu renk ve özellik destekli varyant formu
   const [nv, setNv] = useState({
     skuPrefix: '',
     price: '',
     stock: '',
-    colors: '',
-    attrName: 'beden',
-    attrValues: '',
+    colors: '', // Örn: "Siyah, Beyaz, Kırmızı"
+    attrName: 'beden', // Örn: "beden", "switch", "baglanti"
+    attrValues: '', // Örn: "S, M, L" veya "Red, Blue"
   })
   const [stockIn, setStockIn] = useState<Record<string, string>>({})
 
@@ -85,9 +87,12 @@ export default function EditProduct() {
 
   const variantColors = Array.from(
     new Set(
-      variants
-        .map((v) => String(v.options?.renk ?? v.options?.color ?? '').split(',')[0].trim())
-        .filter(Boolean),
+      variants.flatMap((v) =>
+        String(v.options?.renk ?? v.options?.color ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
     ),
   )
 
@@ -147,10 +152,11 @@ export default function EditProduct() {
       })
     })
 
+  // Birden fazla rengi ve özelliği tek seferde kombinasyonlayıp varyant olarak ekler
   const addVariant = (e: React.FormEvent) => {
     e.preventDefault()
     run(async () => {
-      const price = Math.round(Number(nv.price.replace(',', '.')) * 100)
+      const price = Math.round(Number(nv.price.replace(',', '.')) * 100) // TL -> kuruş
       const initial = parseInt(nv.stock, 10)
 
       const colorList = nv.colors
@@ -163,6 +169,7 @@ export default function EditProduct() {
         .filter(Boolean)
       const extraKey = nv.attrName.trim().toLowerCase() || 'secenek'
 
+      // Kombinasyonları oluştur
       let combos: Record<string, string>[] = [{}]
       if (colorList.length > 0) {
         combos = combos.flatMap((c) => colorList.map((col) => ({ ...c, renk: col })))
