@@ -125,6 +125,7 @@ export function ProductCard({
 
   const [selColor, setSelColor] = useState(initialColor)
   const [imgIdx, setImgIdx] = useState(() => colorToImgIdx[initialColor] ?? 0)
+  const [hovering, setHovering] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
 
   if (!groups.length) {
@@ -152,6 +153,24 @@ export function ProductCard({
     setImgIdx(colorToImgIdx[color] ?? (images[gi] ? gi : 0))
   }
 
+  // Görsel alanını mevcut renk adedine (groups.length) bölüp imlecin bulunduğu dikey dilimin rengini seçer
+  const handleImageScrub = (e: React.MouseEvent<HTMLDivElement>) => {
+    const sliceCount = groups.length
+    if (sliceCount <= 1) return
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    if (rect.width <= 0) return
+
+    const relX = Math.max(0, Math.min(rect.width - 0.001, e.clientX - rect.left))
+    const sliceIndex = Math.floor((relX / rect.width) * sliceCount)
+    const target = groups[sliceIndex]
+
+    if (target && target.color !== group.color) {
+      setSelColor(target.color)
+      setImgIdx(colorToImgIdx[target.color] ?? (images[sliceIndex] ? sliceIndex : 0))
+    }
+  }
+
   const openOptionModal = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -166,16 +185,52 @@ export function ProductCard({
       <Link href={`/products/${slug}`} prefetch={false} className="card">
         {hasColors && groups.length > 1 ? (
           <div style={{ background: '#fff', borderBottom: '1px solid #f1f5f9' }}>
-            {img ? (
-              <img
-                src={img.url}
-                alt={img.alt || name}
-                style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'contain', padding: 12, display: 'block' }}
-              />
-            ) : (
-              <div className="ph" />
-            )}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 7, padding: '2px 0 10px' }}>
+            <div
+              onMouseEnter={() => setHovering(true)}
+              onMouseLeave={() => setHovering(false)}
+              onMouseMove={handleImageScrub}
+              style={{ position: 'relative' }}
+            >
+              {img ? (
+                <img
+                  src={img.url}
+                  alt={img.alt || name}
+                  style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'contain', padding: 12, display: 'block' }}
+                />
+              ) : (
+                <div className="ph" />
+              )}
+
+              {/* Üzerine gelindiğinde kaç dikey dilime bölündüğünü gösteren ince gösterge çubukları */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 12,
+                  right: 12,
+                  bottom: 4,
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${groups.length}, 1fr)`,
+                  gap: 4,
+                  pointerEvents: 'none',
+                  opacity: hovering ? 1 : 0,
+                  transition: 'opacity 0.15s ease',
+                }}
+              >
+                {groups.map((g) => (
+                  <span
+                    key={g.color}
+                    style={{
+                      height: 3,
+                      borderRadius: 999,
+                      background: g.color === group.color ? '#e8590c' : 'rgba(148, 163, 184, 0.45)',
+                      transition: 'background 0.15s ease',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 7, padding: '4px 0 10px' }}>
               {groups.map((g, gi) => {
                 const selected = g.color === group.color
                 const inStock = g.list.some((v) => v.stock > 0)
