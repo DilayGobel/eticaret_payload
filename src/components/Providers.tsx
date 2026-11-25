@@ -9,7 +9,7 @@ type AuthCtx = {
   register: (data: { email: string; password: string; firstName: string; lastName: string }) => Promise<void>
   logout: () => Promise<void>
 }
-const Ctx = createContext<AuthCtx>(null as any)
+const Ctx = createContext(null as any)
 export const useAuth = () => useContext(Ctx)
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -32,17 +32,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }, [refresh])
 
   const login = async (email: string, password: string) => {
-    await api('/users/login', { method: 'POST', body: JSON.stringify({ email, password }) })
-    
-    // Misafir sepetini kullanıcı hesabına aktar
-    try {
-      await mergeGuestCart()
-    } catch (e) {
-      console.error('Sepet birleştirme hatası:', e)
+    const res = await api('/users/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    })
+
+    if (res?.user) {
+      setUser(res.user)
+      setLoading(false)
+    } else {
+      await refresh()
     }
 
-    await refresh()
-    notifyCartChanged()
+    // Misafir sepeti birleştirmeyi yönlendirmeyi bekletmeden arka planda yap
+    mergeGuestCart().catch((e) => console.error('Sepet birleştirme hatası:', e))
   }
 
   const register = async (data: any) => {
